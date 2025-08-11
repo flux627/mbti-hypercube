@@ -1,0 +1,34 @@
+html, body {
+  background: #ffffff !important;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+}
+
+.app {
+  max-width: 100%;
+}
+
+h2 {
+  margin-bottom: 10px;
+}
+
+.hint {
+  color: #444;
+  margin: 6px 0 14px;
+}
+
+.type-selector-container {
+  margin-bottom: 14px;
+}
+
+.type-selector-container label {
+  margin-right: 8px;
+}
+
+#typeSel {
+  font-size: 16px;
+}
