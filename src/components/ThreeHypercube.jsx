@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Box, Plane, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -56,9 +56,38 @@ const CubeEdge = ({ start, end }) => {
   );
 };
 
-const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
+// Component for each quadrant with its MBTI type label
+const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal }) => {
+  const handleClick = (e) => {
+    e.stopPropagation();
+    onClick(type);
+  };
+
+  return (
+    <group position={position}>
+      <mesh onClick={handleClick}>
+        <planeGeometry args={[0.75, 0.75]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+      <Text
+        fontSize={0.15}
+        color={isSelected ? "white" : "#888888"}
+        anchorX="center"
+        anchorY="middle"
+        rotation={faceNormal}
+        fontWeight={isSelected ? 'bold' : 'normal'}
+      >
+        {type}
+      </Text>
+    </group>
+  );
+};
+
+const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => {
   const meshRef = useRef();
   const numberRefs = useRef([]);
+  
+  const isActive = types.includes(selectedType);
   
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -70,6 +99,55 @@ const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
     geo.computeVertexNormals();
     return geo;
   }, [vertices]);
+
+  // Calculate quadrant positions
+  const quadrantPositions = useMemo(() => {
+    const [v0, v1, v2, v3] = vertices;
+    const e1 = v1.map((c, i) => c - v0[i]);
+    const e3 = v3.map((c, i) => c - v0[i]);
+    
+    // Position for each type's label (in the center of its quadrant)
+    const positions = [
+      v0.map((c, i) => c + 0.25 * e1[i] + 0.25 * e3[i]), // Bottom-left
+      v0.map((c, i) => c + 0.75 * e1[i] + 0.25 * e3[i]), // Bottom-right
+      v0.map((c, i) => c + 0.75 * e1[i] + 0.75 * e3[i]), // Top-right
+      v0.map((c, i) => c + 0.25 * e1[i] + 0.75 * e3[i]), // Top-left
+    ];
+    
+    return positions;
+  }, [vertices]);
+
+  // Calculate face normal for text rotation
+  const faceNormal = useMemo(() => {
+    const [v0, v1, v2] = vertices;
+    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+    const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
+    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    // Determine rotation based on which face this is
+    if (Math.abs(normal.x) > 0.9) return [0, Math.PI / 2 * Math.sign(normal.x), 0];
+    if (Math.abs(normal.y) > 0.9) return [Math.PI / 2 * Math.sign(normal.y), 0, 0];
+    if (Math.abs(normal.z) > 0.9) return [0, 0, 0];
+    return [0, 0, 0];
+  }, [vertices]);
+
+  // Calculate number positions (near grid intersection when selected)
+  const numberPositions = useMemo(() => {
+    if (!isActive) return [];
+    
+    const [v0, v1, v2, v3] = vertices;
+    const center = v0.map((c, i) => (c + v1[i] + v2[i] + v3[i]) / 4);
+    const e1 = v1.map((c, i) => c - v0[i]);
+    const e3 = v3.map((c, i) => c - v0[i]);
+    
+    // Position numbers closer to center
+    return [
+      v0.map((c, i) => c + 0.4 * e1[i] + 0.4 * e3[i]), // 1
+      v0.map((c, i) => c + 0.6 * e1[i] + 0.4 * e3[i]), // 2
+      v0.map((c, i) => c + 0.4 * e1[i] + 0.6 * e3[i]), // 3
+      v0.map((c, i) => c + 0.6 * e1[i] + 0.6 * e3[i]), // 4
+    ];
+  }, [vertices, isActive]);
 
   // Billboard effect for numbers
   useFrame(({ camera }) => {
@@ -84,49 +162,66 @@ const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
     <group>
       <mesh ref={meshRef} geometry={geometry}>
         <meshStandardMaterial
-          color={isActive ? '#ff8800' : '#222222'}
-          opacity={isActive ? 0.6 : 0.1}
+          color={isActive ? '#ff8800' : '#333333'}
+          opacity={isActive ? 0.6 : 0.3}
           transparent
           side={THREE.DoubleSide}
         />
       </mesh>
       
-      {isActive && functionStack && (
-        <>
-          {functionStack.map((func, idx) => {
-            const pos = typePositions[idx];
-            if (!pos) return null;
-            
-            return (
-              <group 
-                key={idx} 
-                position={pos}
-                ref={el => numberRefs.current[idx] = el}
-              >
-                <Text
-                  fontSize={0.25}
-                  color="white"
-                  anchorX="center"
-                  anchorY="middle"
-                  outlineWidth={0.02}
-                  outlineColor="black"
-                  renderOrder={1}
-                >
-                  <meshBasicMaterial attach="material" depthTest={false} />
-                  {idx + 1}
-                </Text>
-              </group>
-            );
-          })}
-        </>
-      )}
+      {/* Type labels for each quadrant */}
+      {types.map((type, idx) => (
+        <FaceQuadrant
+          key={type}
+          position={quadrantPositions[idx]}
+          type={type}
+          isSelected={type === selectedType}
+          onClick={onTypeSelect}
+          faceNormal={faceNormal}
+        />
+      ))}
+      
+      {/* Function stack numbers (only when active) */}
+      {isActive && numberPositions.map((pos, idx) => {
+        const typeIndex = types.indexOf(selectedType);
+        if (typeIndex === -1) return null;
+        
+        // Map the numbers based on which type is selected
+        const numberMap = {
+          0: [1, 2, 3, 4],
+          1: [2, 1, 4, 3],
+          2: [4, 3, 2, 1],
+          3: [3, 4, 1, 2]
+        };
+        
+        const number = numberMap[typeIndex][idx];
+        
+        return (
+          <group 
+            key={idx} 
+            position={pos}
+            ref={el => numberRefs.current[idx] = el}
+          >
+            <Text
+              fontSize={0.25}
+              color="white"
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.02}
+              outlineColor="black"
+              renderOrder={1}
+            >
+              <meshBasicMaterial attach="material" depthTest={false} />
+              {number}
+            </Text>
+          </group>
+        );
+      })}
     </group>
   );
 };
 
 const GridLines = ({ face, isActive }) => {
-  if (!isActive) return null;
-  
   const geometry = useMemo(() => {
     const [v0, v1, v2, v3] = face;
     
@@ -161,7 +256,7 @@ const GridLines = ({ face, isActive }) => {
       frustumCulled={false}
     >
       <lineBasicMaterial 
-        color="#ff69b4"
+        color={isActive ? "#ff69b4" : "#ffffff"}
         depthWrite={false}
         depthTest={false}
         transparent={false}
@@ -170,7 +265,7 @@ const GridLines = ({ face, isActive }) => {
   );
 };
 
-const HypercubeScene = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunctions }) => {
+const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadrant, getActiveFunctions }) => {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(true);
   
@@ -257,61 +352,79 @@ const HypercubeScene = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunct
       return sorted.map(s => corners[s.idx]);
     };
     
-    const quadrantFaces = {
-      'Ni-Fe-Ti-Se': orderFaceVertices(['Ni', 'Fe', 'Ti', 'Se']),
-      'Ni-Te-Fi-Se': orderFaceVertices(['Ni', 'Te', 'Fi', 'Se']),
-      'Ne-Te-Fi-Si': orderFaceVertices(['Ne', 'Te', 'Fi', 'Si']),
-      'Ne-Fe-Ti-Si': orderFaceVertices(['Ne', 'Fe', 'Ti', 'Si'])
+    // Map types to their dominant function corner
+    // The order should match the ordered vertices
+    const getTypesForFace = (funcs, orderedVerts) => {
+      const typesByDominant = {
+        'Ni': ['INFJ', 'INTJ'],
+        'Ne': ['ENFP', 'ENTP'],
+        'Si': ['ISFJ', 'ISTJ'],
+        'Se': ['ESFP', 'ESTP'],
+        'Ti': ['INTP', 'ISTP'],
+        'Te': ['ENTJ', 'ESTJ'],
+        'Fi': ['INFP', 'ISFP'],
+        'Fe': ['ENFJ', 'ESFJ']
+      };
+      
+      // For each ordered vertex, find the type with that dominant function
+      // that also belongs to this face
+      const faceTypes = [];
+      orderedVerts.forEach(vert => {
+        // Find which function this vertex represents
+        for (const [func, coord] of Object.entries(corners)) {
+          if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+            // Find types with this dominant function that use all face functions
+            const candidates = typesByDominant[func] || [];
+            for (const type of candidates) {
+              const stack = mbtiData[type];
+              if (stack && funcs.every(f => stack.includes(f))) {
+                faceTypes.push(type);
+                break;
+              }
+            }
+            break;
+          }
+        }
+      });
+      
+      return faceTypes;
     };
+    
+    const quadrantFaces = {
+      'Ni-Fe-Ti-Se': {
+        vertices: orderFaceVertices(['Ni', 'Fe', 'Ti', 'Se']),
+        types: []
+      },
+      'Ni-Te-Fi-Se': {
+        vertices: orderFaceVertices(['Ni', 'Te', 'Fi', 'Se']),
+        types: []
+      },
+      'Ne-Te-Fi-Si': {
+        vertices: orderFaceVertices(['Ne', 'Te', 'Fi', 'Si']),
+        types: []
+      },
+      'Ne-Fe-Ti-Si': {
+        vertices: orderFaceVertices(['Ne', 'Fe', 'Ti', 'Si']),
+        types: []
+      }
+    };
+    
+    // Now populate the types in the correct order
+    quadrantFaces['Ni-Fe-Ti-Se'].types = getTypesForFace(['Ni', 'Fe', 'Ti', 'Se'], quadrantFaces['Ni-Fe-Ti-Se'].vertices);
+    quadrantFaces['Ni-Te-Fi-Se'].types = getTypesForFace(['Ni', 'Te', 'Fi', 'Se'], quadrantFaces['Ni-Te-Fi-Se'].vertices);
+    quadrantFaces['Ne-Te-Fi-Si'].types = getTypesForFace(['Ne', 'Te', 'Fi', 'Si'], quadrantFaces['Ne-Te-Fi-Si'].vertices);
+    quadrantFaces['Ne-Fe-Ti-Si'].types = getTypesForFace(['Ne', 'Fe', 'Ti', 'Si'], quadrantFaces['Ne-Fe-Ti-Si'].vertices);
     return quadrantFaces;
-  }, [corners]);
+  }, [corners, mbtiData]);
   
   const activeFunctions = useMemo(() => 
     selectedType ? getActiveFunctions(selectedType) : [],
     [selectedType, getActiveFunctions]
   );
   
-  const activeQuadrant = selectedType ? typeToQuadrant[selectedType] : null;
-  
-  const getTypePositions = (quadrant) => {
-    if (!activeQuadrant || quadrant !== activeQuadrant) return {};
-    
-    const face = faces[quadrant];
-    const [v0, v1, v2, v3] = face;
-    
-    const stack = mbtiData[selectedType];
-    if (!stack) return {};
-    
-    // Build the annotation positions using the same UV mapping as Plotly
-    const e1 = v1.map((c, i) => c - v0[i]);
-    const e3 = v3.map((c, i) => c - v0[i]);
-    
-    const UV = [[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]];
-    const pts = UV.map(([u, v]) => [
-      v0[0] + u * e1[0] + v * e3[0],
-      v0[1] + u * e1[1] + v * e3[1],
-      v0[2] + u * e1[2] + v * e3[2]
-    ]);
-    
-    // Map each corner function to its number
-    const cornerFuncs = face.map(vert => {
-      // Find which function this vertex represents
-      for (const [func, coord] of Object.entries(corners)) {
-        if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
-          return func;
-        }
-      }
-    });
-    
-    const positions = {};
-    cornerFuncs.forEach((func, cornerIdx) => {
-      const stackIdx = stack.indexOf(func);
-      if (stackIdx !== -1) {
-        positions[stackIdx] = pts[cornerIdx];
-      }
-    });
-    
-    return positions;
+  const handleTypeSelect = (type) => {
+    setSelectedType(type);
+    setAutoRotate(false);
   };
   
   return (
@@ -338,20 +451,24 @@ const HypercubeScene = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunct
           />
         ))}
         
-        {Object.entries(faces).map(([quadrant, vertices]) => (
-          <React.Fragment key={quadrant}>
-            <CubeFace
-              vertices={vertices}
-              isActive={quadrant === activeQuadrant}
-              functionStack={quadrant === activeQuadrant ? mbtiData[selectedType] : null}
-              typePositions={getTypePositions(quadrant)}
-            />
-            <GridLines
-              face={vertices}
-              isActive={quadrant === activeQuadrant}
-            />
-          </React.Fragment>
-        ))}
+        {Object.entries(faces).map(([quadrant, { vertices, types }]) => {
+          const isActive = types.includes(selectedType);
+          return (
+            <React.Fragment key={quadrant}>
+              <CubeFace
+                vertices={vertices}
+                quadrant={quadrant}
+                types={types}
+                selectedType={selectedType}
+                onTypeSelect={handleTypeSelect}
+              />
+              <GridLines
+                face={vertices}
+                isActive={isActive}
+              />
+            </React.Fragment>
+          );
+        })}
       </group>
       
       <OrbitControls
@@ -366,7 +483,7 @@ const HypercubeScene = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunct
   );
 };
 
-const ThreeHypercube = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunctions }) => {
+const ThreeHypercube = ({ selectedType, setSelectedType, mbtiData, typeToQuadrant, getActiveFunctions }) => {
   return (
     <div style={{ width: '100%', height: '600px' }}>
       <Canvas
@@ -375,6 +492,7 @@ const ThreeHypercube = ({ selectedType, mbtiData, typeToQuadrant, getActiveFunct
       >
         <HypercubeScene
           selectedType={selectedType}
+          setSelectedType={setSelectedType}
           mbtiData={mbtiData}
           typeToQuadrant={typeToQuadrant}
           getActiveFunctions={getActiveFunctions}

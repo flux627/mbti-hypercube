@@ -35,6 +35,7 @@ function App() {
       {useThreeJS ? (
         <ThreeHypercube 
           selectedType={selectedType}
+          setSelectedType={setSelectedType}
           mbtiData={mbtiData}
           typeToQuadrant={typeToQuadrant}
           getActiveFunctions={getActiveFunctions}
