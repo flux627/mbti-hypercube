@@ -33,7 +33,9 @@ const CubeVertex = ({ position, label, isActive }) => {
           anchorY="middle"
           outlineWidth={0.015}
           outlineColor="black"
+          renderOrder={2}
         >
+          <meshBasicMaterial attach="material" depthTest={false} />
           {label}
         </Text>
       </group>
@@ -56,6 +58,7 @@ const CubeEdge = ({ start, end }) => {
 
 const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
   const meshRef = useRef();
+  const numberRefs = useRef([]);
   
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -67,6 +70,15 @@ const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
     geo.computeVertexNormals();
     return geo;
   }, [vertices]);
+
+  // Billboard effect for numbers
+  useFrame(({ camera }) => {
+    numberRefs.current.forEach(ref => {
+      if (ref) {
+        ref.lookAt(camera.position);
+      }
+    });
+  });
 
   return (
     <group>
@@ -86,18 +98,24 @@ const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
             if (!pos) return null;
             
             return (
-              <Text
-                key={idx}
+              <group 
+                key={idx} 
                 position={pos}
-                fontSize={0.25}
-                color="white"
-                anchorX="center"
-                anchorY="middle"
-                outlineWidth={0.02}
-                outlineColor="black"
+                ref={el => numberRefs.current[idx] = el}
               >
-                {idx + 1}
-              </Text>
+                <Text
+                  fontSize={0.25}
+                  color="white"
+                  anchorX="center"
+                  anchorY="middle"
+                  outlineWidth={0.02}
+                  outlineColor="black"
+                  renderOrder={1}
+                >
+                  <meshBasicMaterial attach="material" depthTest={false} />
+                  {idx + 1}
+                </Text>
+              </group>
             );
           })}
         </>
