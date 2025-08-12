@@ -3,6 +3,140 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Box, Plane, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 
+// Helper to map MBTI type to face and position information
+const getTypeMapping = (type) => {
+  const mappings = {
+    // Face 0: Ni-Fe-Ti-Se
+    'INFJ': { face: 0, faceType: 0, functions: ['Ni', 'Fe', 'Ti', 'Se'], quadrant: 'top-left', dominant: 'Ni', position: 0 },
+    'ENFJ': { face: 0, faceType: 0, functions: ['Ni', 'Fe', 'Ti', 'Se'], quadrant: 'top-right', dominant: 'Fe', position: 1 },
+    'ISTP': { face: 0, faceType: 0, functions: ['Ni', 'Fe', 'Ti', 'Se'], quadrant: 'bottom-right', dominant: 'Ti', position: 2 },
+    'ESTP': { face: 0, faceType: 0, functions: ['Ni', 'Fe', 'Ti', 'Se'], quadrant: 'bottom-left', dominant: 'Se', position: 3 },
+    
+    // Face 1: Ni-Te-Fi-Se
+    'INTJ': { face: 1, faceType: 1, functions: ['Ni', 'Te', 'Fi', 'Se'], quadrant: 'top-left', dominant: 'Ni', position: 0 },
+    'ENTJ': { face: 1, faceType: 1, functions: ['Ni', 'Te', 'Fi', 'Se'], quadrant: 'top-right', dominant: 'Te', position: 1 },
+    'ISFP': { face: 1, faceType: 1, functions: ['Ni', 'Te', 'Fi', 'Se'], quadrant: 'bottom-right', dominant: 'Fi', position: 2 },
+    'ESFP': { face: 1, faceType: 1, functions: ['Ni', 'Te', 'Fi', 'Se'], quadrant: 'bottom-left', dominant: 'Se', position: 3 },
+    
+    // Face 2: Ne-Te-Fi-Si
+    'INFP': { face: 2, faceType: 2, functions: ['Ne', 'Te', 'Fi', 'Si'], quadrant: 'bottom-right', dominant: 'Fi', position: 2 },
+    'ENFP': { face: 2, faceType: 2, functions: ['Ne', 'Te', 'Fi', 'Si'], quadrant: 'top-left', dominant: 'Ne', position: 0 },
+    'ISTJ': { face: 2, faceType: 2, functions: ['Ne', 'Te', 'Fi', 'Si'], quadrant: 'bottom-left', dominant: 'Si', position: 3 },
+    'ESTJ': { face: 2, faceType: 2, functions: ['Ne', 'Te', 'Fi', 'Si'], quadrant: 'top-right', dominant: 'Te', position: 1 },
+    
+    // Face 3: Ne-Fe-Ti-Si
+    'INTP': { face: 3, faceType: 3, functions: ['Ne', 'Fe', 'Ti', 'Si'], quadrant: 'bottom-right', dominant: 'Ti', position: 2 },
+    'ENTP': { face: 3, faceType: 3, functions: ['Ne', 'Fe', 'Ti', 'Si'], quadrant: 'top-left', dominant: 'Ne', position: 0 },
+    'ISFJ': { face: 3, faceType: 3, functions: ['Ne', 'Fe', 'Ti', 'Si'], quadrant: 'bottom-left', dominant: 'Si', position: 3 },
+    'ESFJ': { face: 3, faceType: 3, functions: ['Ne', 'Fe', 'Ti', 'Si'], quadrant: 'top-right', dominant: 'Fe', position: 1 }
+  };
+  
+  return mappings[type];
+};
+
+// Helper to determine gradient colors based on type
+const getGradientColors = (type) => {
+  const colors = {
+    red: new THREE.Color('#ff0000'),
+    blue: new THREE.Color('#0000ff'),
+    orange: new THREE.Color('#ff8a00'),
+    cyan: new THREE.Color('#00aeff')
+  };
+  
+  // Direct mapping for each type based on tested configurations
+  const gradientMappings = {
+    // Face 0: Ni-Fe-Ti-Se
+    'INFJ': { 
+      color1Start: colors.red, color1End: colors.blue,
+      color2Start: colors.orange, color2End: colors.cyan,
+      faceType: 0
+    },
+    'ENFJ': { 
+      color1Start: colors.orange, color1End: colors.cyan,
+      color2Start: colors.red, color2End: colors.blue,
+      faceType: 0
+    },
+    'ISTP': { 
+      color1Start: colors.cyan, color1End: colors.orange,
+      color2Start: colors.blue, color2End: colors.red,
+      faceType: 0
+    },
+    'ESTP': { 
+      color1Start: colors.blue, color1End: colors.red,
+      color2Start: colors.cyan, color2End: colors.orange,
+      faceType: 0
+    },
+    
+    // Face 1: Ni-Te-Fi-Se
+    'INTJ': { 
+      color1Start: colors.orange, color1End: colors.cyan,
+      color2Start: colors.red, color2End: colors.blue,
+      faceType: 1
+    },
+    'ENTJ': { 
+      color1Start: colors.red, color1End: colors.blue,
+      color2Start: colors.orange, color2End: colors.cyan,
+      faceType: 1
+    },
+    'ISFP': { 
+      color1Start: colors.blue, color1End: colors.red,
+      color2Start: colors.cyan, color2End: colors.orange,
+      faceType: 1
+    },
+    'ESFP': { 
+      color1Start: colors.cyan, color1End: colors.orange,
+      color2Start: colors.blue, color2End: colors.red,
+      faceType: 1
+    },
+    
+    // Face 2: Ne-Te-Fi-Si
+    'INFP': { 
+      color1Start: colors.red, color1End: colors.blue,
+      color2Start: colors.orange, color2End: colors.cyan,
+      faceType: 2
+    },
+    'ENFP': { 
+      color1Start: colors.orange, color1End: colors.cyan,
+      color2Start: colors.red, color2End: colors.blue,
+      faceType: 2
+    },
+    'ISTJ': { 
+      color1Start: colors.cyan, color1End: colors.orange,
+      color2Start: colors.blue, color2End: colors.red,
+      faceType: 2
+    },
+    'ESTJ': { 
+      color1Start: colors.blue, color1End: colors.red,
+      color2Start: colors.cyan, color2End: colors.orange,
+      faceType: 2
+    },
+    
+    // Face 3: Ne-Fe-Ti-Si
+    'INTP': { 
+      color1Start: colors.red, color1End: colors.blue,
+      color2Start: colors.orange, color2End: colors.cyan,
+      faceType: 3
+    },
+    'ENTP': { 
+      color1Start: colors.orange, color1End: colors.cyan,
+      color2Start: colors.red, color2End: colors.blue,
+      faceType: 3
+    },
+    'ISFJ': { 
+      color1Start: colors.cyan, color1End: colors.orange,
+      color2Start: colors.blue, color2End: colors.red,
+      faceType: 3
+    },
+    'ESFJ': { 
+      color1Start: colors.blue, color1End: colors.red,
+      color2Start: colors.cyan, color2End: colors.orange,
+      faceType: 3
+    }
+  };
+  
+  return gradientMappings[type] || null;
+};
+
 // Gradient shader for selected faces
 const gradientVertexShader = `
   varying vec2 vUv;
@@ -248,8 +382,14 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       // Determine gradient colors based on the selected type
       let color1Start, color1End, color2Start, color2End;
       
-      // Face 1: Ni-Fe-Ti-Se
-      if (selectedType === 'INFJ') {
+      // Try using the helper first
+      const gradientConfig = getGradientColors(selectedType);
+      if (gradientConfig) {
+        ({ color1Start, color1End, color2Start, color2End } = gradientConfig);
+        // faceType is already set above
+      } else {
+        // Fallback to manual configuration if helper doesn't have the type
+        if (selectedType === 'INFJ') {
         // INFJ: Left=Dominant(red->blue), Right=Auxiliary(orange->cyan)
         color1Start = new THREE.Color('#ff0000');  // Red
         color1End = new THREE.Color('#0000ff');    // Blue
@@ -376,7 +516,9 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         color2Start = new THREE.Color('#ff8a00');
         color2End = new THREE.Color('#00aeff');
       }
+      } // End of manual configuration fallback
       
+      // Now create the material with the determined colors
       const newMaterial = new THREE.ShaderMaterial({
         uniforms: {
           colorStart1: { value: color1Start },
