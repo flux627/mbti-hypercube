@@ -82,7 +82,7 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, faceOff
   );
 };
 
-const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => {
+const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners }) => {
   const meshRef = useRef();
   const numberRefs = useRef([]);
   
@@ -102,16 +102,15 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => 
   // Calculate quadrant positions
   const quadrantPositions = useMemo(() => {
     const [v0, v1, v2, v3] = vertices;
-    const e1 = v1.map((c, i) => c - v0[i]);
-    const e3 = v3.map((c, i) => c - v0[i]);
     
-    // Position for each type's label (in the center of its quadrant)
-    const positions = [
-      v0.map((c, i) => c + 0.25 * e1[i] + 0.25 * e3[i]), // Bottom-left
-      v0.map((c, i) => c + 0.75 * e1[i] + 0.25 * e3[i]), // Bottom-right
-      v0.map((c, i) => c + 0.75 * e1[i] + 0.75 * e3[i]), // Top-right
-      v0.map((c, i) => c + 0.25 * e1[i] + 0.75 * e3[i]), // Top-left
-    ];
+    // Calculate center of face
+    const center = vertices.reduce((acc, v) => 
+      acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
+    
+    // Position for each type's label (halfway between vertex and center)
+    const positions = vertices.map(v => 
+      v.map((c, i) => (c + center[i]) / 2)
+    );
     
     return positions;
   }, [vertices]);
@@ -134,18 +133,14 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => 
   const numberPositions = useMemo(() => {
     if (!isActive) return [];
     
-    const [v0, v1, v2, v3] = vertices;
-    const center = v0.map((c, i) => (c + v1[i] + v2[i] + v3[i]) / 4);
-    const e1 = v1.map((c, i) => c - v0[i]);
-    const e3 = v3.map((c, i) => c - v0[i]);
+    // Calculate center of face
+    const center = vertices.reduce((acc, v) => 
+      acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
-    // Position numbers closer to center
-    return [
-      v0.map((c, i) => c + 0.4 * e1[i] + 0.4 * e3[i]), // 1
-      v0.map((c, i) => c + 0.6 * e1[i] + 0.4 * e3[i]), // 2
-      v0.map((c, i) => c + 0.4 * e1[i] + 0.6 * e3[i]), // 3
-      v0.map((c, i) => c + 0.6 * e1[i] + 0.6 * e3[i]), // 4
-    ];
+    // Position numbers between each vertex and center (closer to center)
+    return vertices.map(v => 
+      v.map((c, i) => c * 0.3 + center[i] * 0.7)
+    );
   }, [vertices, isActive]);
 
   // Billboard effect for numbers
@@ -217,41 +212,49 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => 
       ))}
       
       {/* Function stack numbers (only when active) */}
-      {isActive && numberPositions.map((pos, idx) => {
-        const typeIndex = types.indexOf(selectedType);
-        if (typeIndex === -1) return null;
+      {isActive && selectedType && (() => {
+        const stack = mbtiData[selectedType];
+        if (!stack) return null;
         
-        // Map the numbers based on which type is selected
-        const numberMap = {
-          0: [1, 2, 3, 4],
-          1: [2, 1, 4, 3],
-          2: [4, 3, 2, 1],
-          3: [3, 4, 1, 2]
-        };
+        // Get the ordered functions for this face from vertices
+        const orderedFuncs = [];
+        vertices.forEach(vert => {
+          for (const [func, coord] of Object.entries(corners)) {
+            if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+              orderedFuncs.push(func);
+              break;
+            }
+          }
+        });
         
-        const number = numberMap[typeIndex][idx];
-        
-        return (
-          <group 
-            key={idx} 
-            position={pos}
-            ref={el => numberRefs.current[idx] = el}
-          >
-            <Text
-              fontSize={0.25}
-              color="white"
-              anchorX="center"
-              anchorY="middle"
-              outlineWidth={0.02}
-              outlineColor="black"
-              renderOrder={1}
+        // Map each position to its function number in the stack
+        return numberPositions.map((pos, idx) => {
+          const func = orderedFuncs[idx];
+          const stackPosition = stack.indexOf(func);
+          if (stackPosition === -1) return null;
+          
+          return (
+            <group 
+              key={idx} 
+              position={pos}
+              ref={el => numberRefs.current[idx] = el}
             >
-              <meshBasicMaterial attach="material" depthTest={false} />
-              {number}
-            </Text>
-          </group>
-        );
-      })}
+              <Text
+                fontSize={0.25}
+                color="white"
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.02}
+                outlineColor="black"
+                renderOrder={1}
+              >
+                <meshBasicMaterial attach="material" depthTest={false} />
+                {stackPosition + 1}
+              </Text>
+            </group>
+          );
+        });
+      })() }
     </group>
   );
 };
@@ -425,30 +428,25 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
       return faceTypes;
     };
     
+    // Based on our test, here are the correct ordered mappings
     const quadrantFaces = {
       'Ni-Fe-Ti-Se': {
         vertices: orderFaceVertices(['Ni', 'Fe', 'Ti', 'Se']),
-        types: []
+        types: ['ESTP', 'INFJ', 'ENFJ', 'ISTP'] // Se, Ni, Fe, Ti order
       },
       'Ni-Te-Fi-Se': {
         vertices: orderFaceVertices(['Ni', 'Te', 'Fi', 'Se']),
-        types: []
+        types: ['ESFP', 'ISFP', 'ENTJ', 'INTJ'] // Se, Fi, Te, Ni order
       },
       'Ne-Te-Fi-Si': {
         vertices: orderFaceVertices(['Ne', 'Te', 'Fi', 'Si']),
-        types: []
+        types: ['INFP', 'ESTJ', 'ISTJ', 'ENFP'] // Fi, Te, Si, Ne order
       },
       'Ne-Fe-Ti-Si': {
         vertices: orderFaceVertices(['Ne', 'Fe', 'Ti', 'Si']),
-        types: []
+        types: ['INTP', 'ENTP', 'ISFJ', 'ESFJ'] // Ti, Ne, Si, Fe order
       }
     };
-    
-    // Now populate the types in the correct order
-    quadrantFaces['Ni-Fe-Ti-Se'].types = getTypesForFace(['Ni', 'Fe', 'Ti', 'Se'], quadrantFaces['Ni-Fe-Ti-Se'].vertices);
-    quadrantFaces['Ni-Te-Fi-Se'].types = getTypesForFace(['Ni', 'Te', 'Fi', 'Se'], quadrantFaces['Ni-Te-Fi-Se'].vertices);
-    quadrantFaces['Ne-Te-Fi-Si'].types = getTypesForFace(['Ne', 'Te', 'Fi', 'Si'], quadrantFaces['Ne-Te-Fi-Si'].vertices);
-    quadrantFaces['Ne-Fe-Ti-Si'].types = getTypesForFace(['Ne', 'Fe', 'Ti', 'Si'], quadrantFaces['Ne-Fe-Ti-Si'].vertices);
     return quadrantFaces;
   }, [corners, mbtiData]);
   
@@ -496,6 +494,8 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
                 types={types}
                 selectedType={selectedType}
                 onTypeSelect={handleTypeSelect}
+                mbtiData={mbtiData}
+                corners={corners}
               />
               <GridLines
                 face={vertices}
