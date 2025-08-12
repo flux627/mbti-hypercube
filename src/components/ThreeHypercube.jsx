@@ -57,7 +57,7 @@ const CubeEdge = ({ start, end }) => {
 };
 
 // Component for each quadrant with its MBTI type label
-const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal }) => {
+const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, faceOffset }) => {
   const handleClick = (e) => {
     e.stopPropagation();
     onClick(type);
@@ -65,10 +65,6 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal }) => {
 
   return (
     <group position={position}>
-      <mesh onClick={handleClick}>
-        <planeGeometry args={[0.75, 0.75]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
       <Text
         fontSize={0.15}
         color={isSelected ? "white" : "#888888"}
@@ -76,6 +72,9 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal }) => {
         anchorY="middle"
         rotation={faceNormal}
         fontWeight={isSelected ? 'bold' : 'normal'}
+        onClick={handleClick}
+        onPointerOver={(e) => { document.body.style.cursor = 'pointer'; }}
+        onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
       >
         {type}
       </Text>
@@ -158,9 +157,45 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect }) => 
     });
   });
 
+  // Handle click on face background
+  const handleFaceClick = (event) => {
+    // Get click position relative to face
+    const point = event.point;
+    const [v0, v1, v2, v3] = vertices;
+    
+    // Project point onto face plane to determine quadrant
+    const center = v0.map((c, i) => (c + v1[i] + v2[i] + v3[i]) / 4);
+    
+    // Simple distance-based detection to nearest quadrant center
+    let minDist = Infinity;
+    let closestType = null;
+    
+    quadrantPositions.forEach((pos, idx) => {
+      const dist = Math.sqrt(
+        Math.pow(point.x - pos[0], 2) +
+        Math.pow(point.y - pos[1], 2) +
+        Math.pow(point.z - pos[2], 2)
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        closestType = types[idx];
+      }
+    });
+    
+    if (closestType) {
+      onTypeSelect(closestType);
+    }
+  };
+
   return (
     <group>
-      <mesh ref={meshRef} geometry={geometry}>
+      <mesh 
+        ref={meshRef} 
+        geometry={geometry}
+        onClick={handleFaceClick}
+        onPointerOver={(e) => { document.body.style.cursor = 'pointer'; }}
+        onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
+      >
         <meshStandardMaterial
           color={isActive ? '#ff8800' : '#333333'}
           opacity={isActive ? 0.6 : 0.3}
