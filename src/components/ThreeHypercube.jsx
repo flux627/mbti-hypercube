@@ -25,28 +25,75 @@ const gradientFragmentShader = `
   uniform vec2 gradientStart2;
   uniform vec2 gradientEnd2;
   uniform float opacity;
+  uniform float faceType;
   
   varying vec2 vUv;
   varying vec3 vPosition;
   
   void main() {
-    // UV coordinates are swapped - vUv.x is vertical, vUv.y is horizontal
-    // Create vertical gradients using vUv.x (which runs vertically)
-    float t = vUv.x;  // This should go from top to bottom
-    
-    // Create the gradients
-    vec3 gradient1 = mix(colorStart1, colorEnd1, t);  // Red to blue
-    vec3 gradient2 = mix(colorStart2, colorEnd2, t);  // Orange to cyan
-    
-    // Split into two columns using vUv.y
     vec3 finalColor;
+    float t;
+    vec3 gradient1, gradient2;
     
-    if (vUv.y < 0.5) {
-      // LEFT column (but appears as right due to reversal)
-      finalColor = gradient2;  // Auxiliary
+    if (faceType > 2.5) {
+      // Face type 3 (Ne-Fe-Ti-Si)
+      // This face has horizontal divider, need to rotate to vertical
+      // Use vUv.y for column split, vUv.x for gradient direction
+      t = 1.0 - vUv.y;  // gradient along horizontal axis
+      
+      // Create vertical gradients by using horizontal position for mixing
+      vec3 leftGradient = mix(colorStart1, colorEnd1, vUv.y);
+      vec3 rightGradient = mix(colorStart2, colorEnd2, vUv.y);
+      
+      // Split vertically based on x position (flipped)
+      if (vUv.x > 0.5) {
+        finalColor = rightGradient;  // LEFT column (swapped)
+      } else {
+        finalColor = leftGradient;  // RIGHT column (swapped)
+      }
+    } else if (faceType > 1.5) {
+      // Face type 2 (Ne-Te-Fi-Si)
+      // Need vertical divider with vertical gradients
+      // Since UV coordinates are rotated, use vUv.x for vertical gradients
+      t = vUv.x;  // flip gradient direction (bottom to top)
+      gradient1 = mix(colorStart1, colorEnd1, t);
+      gradient2 = mix(colorStart2, colorEnd2, t);
+      
+      if (vUv.y > 0.5) {
+        finalColor = gradient2;  // LEFT column (switched)
+      } else {
+        finalColor = gradient1;  // RIGHT column (switched)
+      }
+    } else if (faceType > 0.5) {
+      // Face type 1 (Ni-Te-Fi-Se)
+      // The UVs are calculated differently, resulting in horizontal gradients
+      // We need to rotate the logic
+      
+      // Use vUv.y for vertical gradients (since it varies left-right)
+      // vUv.y goes from 1 (left) to 0 (right)
+      t = vUv.y;  // 1 at left, 0 at right - use as-is for top-to-bottom effect
+      gradient1 = mix(colorStart1, colorEnd1, t);
+      gradient2 = mix(colorStart2, colorEnd2, t);
+      
+      // Use vUv.x to split into columns (since it varies top-bottom)  
+      if (vUv.x < 0.5) {
+        // TOP half becomes RIGHT column
+        finalColor = gradient2;
+      } else {
+        // BOTTOM half becomes LEFT column
+        finalColor = gradient1;
+      }
     } else {
-      // RIGHT column (but appears as left due to reversal)
-      finalColor = gradient1;  // Dominant
+      // Face type 0 (Ni-Fe-Ti-Se): Works correctly
+      t = 1.0 - vUv.x;  // Flip: 1 at top, 0 at bottom
+      gradient1 = mix(colorStart1, colorEnd1, t);
+      gradient2 = mix(colorStart2, colorEnd2, t);
+      
+      if (vUv.y > 0.5) {
+        finalColor = gradient1;
+      } else {
+        finalColor = gradient2;
+      }
     }
     
     gl_FragColor = vec4(finalColor, opacity);
@@ -184,21 +231,164 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       const materialId = `${types.join(',')}-${selectedType}-${Date.now()}`;
       console.log(`Creating material with ID: ${materialId}`);
       
-      // Determine if gradients should be swapped based on selected type
-      // For testing: swap colors for ENFJ vs INFJ
-      const shouldSwap = selectedType === 'ENFJ' || selectedType === 'ESTP';
+      // Based on the logs, we need to swap gradients for certain types
+      // The issue is that the function positions change, affecting which gradient goes where
+      
+      // Determine face type based on which types are on this face
+      let faceType = 0;
+      if (types.includes('INTJ') || types.includes('ENTJ')) {
+        faceType = 1; // Face 2: Ni-Te-Fi-Se
+      } else if (types.includes('INFP') || types.includes('ENFP')) {
+        faceType = 2; // Face 3: Ne-Te-Fi-Si
+      } else if (types.includes('INTP') || types.includes('ENTP')) {
+        faceType = 3; // Face 4: Ne-Fe-Ti-Si
+      }
+      console.log(`Face type for [${types.join(',')}]: ${faceType}`);
+      
+      // Determine gradient colors based on the selected type
+      let color1Start, color1End, color2Start, color2End;
+      
+      // Face 1: Ni-Fe-Ti-Se
+      if (selectedType === 'INFJ') {
+        // INFJ: Left=Dominant(red->blue), Right=Auxiliary(orange->cyan)
+        color1Start = new THREE.Color('#ff0000');  // Red
+        color1End = new THREE.Color('#0000ff');    // Blue
+        color2Start = new THREE.Color('#ff8a00');  // Orange
+        color2End = new THREE.Color('#00aeff');    // Cyan
+      } else if (selectedType === 'ENFJ') {
+        // ENFJ: Left=Auxiliary(orange->cyan), Right=Dominant(red->blue)
+        color1Start = new THREE.Color('#ff8a00');  // Orange
+        color1End = new THREE.Color('#00aeff');    // Cyan
+        color2Start = new THREE.Color('#ff0000');  // Red
+        color2End = new THREE.Color('#0000ff');    // Blue
+      } else if (selectedType === 'ISTP') {
+        // ISTP: Like ENFJ but with gradients inverted (bottom to top)
+        color1Start = new THREE.Color('#00aeff');  // Cyan (start at bottom)
+        color1End = new THREE.Color('#ff8a00');    // Orange (end at top)
+        color2Start = new THREE.Color('#0000ff');  // Blue (start at bottom)
+        color2End = new THREE.Color('#ff0000');    // Red (end at top)
+      } else if (selectedType === 'ESTP') {
+        // ESTP: Like INFJ but with gradients inverted (bottom to top)
+        color1Start = new THREE.Color('#0000ff');  // Blue (start at bottom)
+        color1End = new THREE.Color('#ff0000');    // Red (end at top)
+        color2Start = new THREE.Color('#00aeff');  // Cyan (start at bottom)
+        color2End = new THREE.Color('#ff8a00');    // Orange (end at top)
+      }
+      // Face 2: Ni-Te-Fi-Se
+      // Note: The shader assigns gradient1 to left, gradient2 to right
+      // But the visual appearance might be swapped
+      else if (selectedType === 'INTJ') {
+        // INTJ (top right): Right=Red->Blue, Left=Orange->Cyan (top to bottom)
+        // Since gradient1 goes to left, gradient2 goes to right:
+        color1Start = new THREE.Color('#ff8a00');  // Orange (left)
+        color1End = new THREE.Color('#00aeff');    // Cyan (left)
+        color2Start = new THREE.Color('#ff0000');  // Red (right)
+        color2End = new THREE.Color('#0000ff');    // Blue (right)
+      } else if (selectedType === 'ENTJ') {
+        // ENTJ (top left): Swap columns from INTJ
+        color1Start = new THREE.Color('#ff0000');  // Red (left)
+        color1End = new THREE.Color('#0000ff');    // Blue (left)
+        color2Start = new THREE.Color('#ff8a00');  // Orange (right)
+        color2End = new THREE.Color('#00aeff');    // Cyan (right)
+      } else if (selectedType === 'ISFP') {
+        // ISFP (bottom left): Left=Red->Blue, Right=Orange->Cyan (bottom to top)
+        color1Start = new THREE.Color('#0000ff');  // Blue (left, start at bottom)
+        color1End = new THREE.Color('#ff0000');    // Red (left, end at top)
+        color2Start = new THREE.Color('#00aeff');  // Cyan (right, start at bottom)
+        color2End = new THREE.Color('#ff8a00');    // Orange (right, end at top)
+      } else if (selectedType === 'ESFP') {
+        // ESFP (bottom right): Right=Red->Blue, Left=Orange->Cyan (bottom to top)
+        color1Start = new THREE.Color('#00aeff');  // Cyan (left, start at bottom)
+        color1End = new THREE.Color('#ff8a00');    // Orange (left, end at top)
+        color2Start = new THREE.Color('#0000ff');  // Blue (right, start at bottom)
+        color2End = new THREE.Color('#ff0000');    // Red (right, end at top)
+      }
+      // Face 3: Ne-Te-Fi-Si (INFP, ENFP, ISTJ, ESTJ)
+      else if (selectedType === 'INFP') {
+        // INFP: Fi-Ne-Si-Te
+        // Test with actual gradient colors
+        color1Start = new THREE.Color('#ff0000');  // Red
+        color1End = new THREE.Color('#0000ff');    // Blue
+        color2Start = new THREE.Color('#ff8a00');  // Orange
+        color2End = new THREE.Color('#00aeff');    // Cyan
+      } else if (selectedType === 'ENFP') {
+        // ENFP: Ne(dom)-Fi(aux)-Te(ter)-Si(inf)
+        // Left column: Auxiliary axis (Fi→Te) = Orange→Cyan
+        // Right column: Dominant axis (Ne→Si) = Red→Blue
+        color1Start = new THREE.Color('#ff8a00');  // Orange (Fi)
+        color1End = new THREE.Color('#00aeff');    // Cyan (Te)
+        color2Start = new THREE.Color('#ff0000');  // Red (Ne)
+        color2End = new THREE.Color('#0000ff');    // Blue (Si)
+      } else if (selectedType === 'ISTJ') {
+        // ISTJ: Si(dom)-Te(aux)-Fi(ter)-Ne(inf)
+        // Left column: Auxiliary axis (Te→Fi) = Cyan→Orange (inverted)
+        // Right column: Dominant axis (Si→Ne) = Blue→Red (inverted)
+        color1Start = new THREE.Color('#00aeff');  // Cyan (Te, bottom)
+        color1End = new THREE.Color('#ff8a00');    // Orange (Fi, top)
+        color2Start = new THREE.Color('#0000ff');  // Blue (Si, bottom)
+        color2End = new THREE.Color('#ff0000');    // Red (Ne, top)
+      } else if (selectedType === 'ESTJ') {
+        // ESTJ: Te(dom)-Si(aux)-Ne(ter)-Fi(inf)
+        // Left column: Dominant axis (Te→Fi) = Blue→Red (inverted)
+        // Right column: Auxiliary axis (Si→Ne) = Cyan→Orange (inverted)
+        color1Start = new THREE.Color('#0000ff');  // Blue (Te, bottom)
+        color1End = new THREE.Color('#ff0000');    // Red (Fi, top)
+        color2Start = new THREE.Color('#00aeff');  // Cyan (Si, bottom)
+        color2End = new THREE.Color('#ff8a00');    // Orange (Ne, top)
+      }
+      // Face 4: Ne-Fe-Ti-Si (INTP, ENTP, ISFJ, ESFJ)
+      else if (selectedType === 'INTP') {
+        // INTP: Ti(dom)-Ne(aux)-Si(ter)-Fe(inf)
+        // Testing with actual gradient colors
+        color1Start = new THREE.Color('#ff0000');  // Red
+        color1End = new THREE.Color('#0000ff');    // Blue
+        color2Start = new THREE.Color('#ff8a00');  // Orange
+        color2End = new THREE.Color('#00aeff');    // Cyan
+      } else if (selectedType === 'ENTP') {
+        // ENTP: Ne(dom)-Ti(aux)-Fe(ter)-Si(inf)
+        // Left column: Auxiliary axis (Ti→Fe) = Orange→Cyan
+        // Right column: Dominant axis (Ne→Si) = Red→Blue
+        color1Start = new THREE.Color('#ff8a00');  // Orange (Ti)
+        color1End = new THREE.Color('#00aeff');    // Cyan (Fe)
+        color2Start = new THREE.Color('#ff0000');  // Red (Ne)
+        color2End = new THREE.Color('#0000ff');    // Blue (Si)
+      } else if (selectedType === 'ISFJ') {
+        // ISFJ: Si(dom)-Fe(aux)-Ti(ter)-Ne(inf)
+        // Left column: Auxiliary axis (Fe→Ti) = Cyan→Orange (inverted)
+        // Right column: Dominant axis (Si→Ne) = Blue→Red (inverted)
+        color1Start = new THREE.Color('#00aeff');  // Cyan (Fe, bottom)
+        color1End = new THREE.Color('#ff8a00');    // Orange (Ti, top)
+        color2Start = new THREE.Color('#0000ff');  // Blue (Si, bottom)
+        color2End = new THREE.Color('#ff0000');    // Red (Ne, top)
+      } else if (selectedType === 'ESFJ') {
+        // ESFJ: Fe(dom)-Si(aux)-Ne(ter)-Ti(inf)
+        // Left column: Dominant axis (Fe→Ti) = Blue→Red (inverted)
+        // Right column: Auxiliary axis (Si→Ne) = Cyan→Orange (inverted)
+        color1Start = new THREE.Color('#0000ff');  // Blue (Fe, bottom)
+        color1End = new THREE.Color('#ff0000');    // Red (Ti, top)
+        color2Start = new THREE.Color('#00aeff');  // Cyan (Si, bottom)
+        color2End = new THREE.Color('#ff8a00');    // Orange (Ne, top)
+      }
+      // Default for other faces (temporary)
+      else {
+        color1Start = new THREE.Color('#ff0000');
+        color1End = new THREE.Color('#0000ff');
+        color2Start = new THREE.Color('#ff8a00');
+        color2End = new THREE.Color('#00aeff');
+      }
       
       const newMaterial = new THREE.ShaderMaterial({
         uniforms: {
-          colorStart1: { value: shouldSwap ? new THREE.Color('#ff8a00') : new THREE.Color('#ff0000') },
-          colorEnd1: { value: shouldSwap ? new THREE.Color('#00aeff') : new THREE.Color('#0000ff') },
-          colorStart2: { value: shouldSwap ? new THREE.Color('#ff0000') : new THREE.Color('#ff8a00') },
-          colorEnd2: { value: shouldSwap ? new THREE.Color('#0000ff') : new THREE.Color('#00aeff') },
+          colorStart1: { value: color1Start },
+          colorEnd1: { value: color1End },
+          colorStart2: { value: color2Start },
+          colorEnd2: { value: color2End },
           gradientStart1: { value: new THREE.Vector2(...gradientStart1) },
           gradientEnd1: { value: new THREE.Vector2(...gradientEnd1) },
           gradientStart2: { value: new THREE.Vector2(...gradientStart2) },
           gradientEnd2: { value: new THREE.Vector2(...gradientEnd2) },
-          opacity: { value: 1.0 }
+          opacity: { value: 1.0 },
+          faceType: { value: faceType }
         },
         vertexShader: gradientVertexShader,
         fragmentShader: gradientFragmentShader,
