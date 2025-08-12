@@ -35,7 +35,6 @@ const CubeVertex = ({ position, label, isActive }) => {
           outlineColor="black"
           renderOrder={2}
         >
-          <meshBasicMaterial attach="material" depthTest={false} />
           {label}
         </Text>
       </group>
@@ -57,23 +56,52 @@ const CubeEdge = ({ start, end }) => {
 };
 
 // Component for each quadrant with its MBTI type label
-const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, faceOffset }) => {
-  const handleClick = (e) => {
+const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOrBottom }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
+
+  const handlePointerDown = (e) => {
     e.stopPropagation();
-    onClick(type);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setIsDragging(false);
+  };
+
+  const handlePointerMove = (e) => {
+    if (dragStart) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - dragStart.x, 2) +
+        Math.pow(e.clientY - dragStart.y, 2)
+      );
+      if (distance > 5) {
+        setIsDragging(true);
+      }
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    e.stopPropagation();
+    if (!isDragging && !isTopOrBottom) {
+      onClick(type);
+    }
+    setDragStart(null);
+    setIsDragging(false);
   };
 
   return (
     <group position={position}>
       <Text
         fontSize={0.15}
-        color={isSelected ? "white" : "#888888"}
+        color={isTopOrBottom ? "#666666" : (isSelected ? "white" : "#888888")}
         anchorX="center"
         anchorY="middle"
         rotation={faceNormal}
-        fontWeight={isSelected ? 'bold' : 'normal'}
-        onClick={handleClick}
-        onPointerOver={(e) => { document.body.style.cursor = 'pointer'; }}
+        fontWeight={isSelected && !isTopOrBottom ? 'bold' : 'normal'}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerOver={(e) => { 
+          if (!isTopOrBottom) document.body.style.cursor = 'pointer'; 
+        }}
         onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
       >
         {type}
@@ -82,11 +110,12 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, faceOff
   );
 };
 
-const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners }) => {
+const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners, isTopOrBottom }) => {
   const meshRef = useRef();
-  const numberRefs = useRef([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
   
-  const isActive = types.includes(selectedType);
+  const isActive = types.includes(selectedType) && !isTopOrBottom;
   
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -101,16 +130,26 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
 
   // Calculate quadrant positions
   const quadrantPositions = useMemo(() => {
-    const [v0, v1, v2, v3] = vertices;
-    
     // Calculate center of face
     const center = vertices.reduce((acc, v) => 
       acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
+    // Calculate face normal for offset
+    const [v0, v1, v2] = vertices;
+    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+    const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
+    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
     // Position for each type's label (halfway between vertex and center)
-    const positions = vertices.map(v => 
-      v.map((c, i) => (c + center[i]) / 2)
-    );
+    // with slight offset along normal to prevent z-fighting
+    const positions = vertices.map(v => {
+      const basePos = v.map((c, i) => (c + center[i]) / 2);
+      return [
+        basePos[0] + normal.x * 0.02,
+        basePos[1] + normal.y * 0.02,
+        basePos[2] + normal.z * 0.02
+      ];
+    });
     
     return positions;
   }, [vertices]);
@@ -137,49 +176,73 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     const center = vertices.reduce((acc, v) => 
       acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
+    // Calculate face normal for offset
+    const [v0, v1, v2] = vertices;
+    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+    const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
+    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
     // Position numbers between each vertex and center (closer to center)
-    return vertices.map(v => 
-      v.map((c, i) => c * 0.3 + center[i] * 0.7)
-    );
+    // with slight offset along normal to prevent z-fighting
+    return vertices.map(v => {
+      const basePos = v.map((c, i) => c * 0.3 + center[i] * 0.7);
+      return [
+        basePos[0] + normal.x * 0.02,
+        basePos[1] + normal.y * 0.02,
+        basePos[2] + normal.z * 0.02
+      ];
+    });
   }, [vertices, isActive]);
 
-  // Billboard effect for numbers
-  useFrame(({ camera }) => {
-    numberRefs.current.forEach(ref => {
-      if (ref) {
-        ref.lookAt(camera.position);
-      }
-    });
-  });
+  // Removed billboard effect - numbers now stay flat on face
 
-  // Handle click on face background
-  const handleFaceClick = (event) => {
-    // Get click position relative to face
-    const point = event.point;
-    const [v0, v1, v2, v3] = vertices;
-    
-    // Project point onto face plane to determine quadrant
-    const center = v0.map((c, i) => (c + v1[i] + v2[i] + v3[i]) / 4);
-    
-    // Simple distance-based detection to nearest quadrant center
-    let minDist = Infinity;
-    let closestType = null;
-    
-    quadrantPositions.forEach((pos, idx) => {
-      const dist = Math.sqrt(
-        Math.pow(point.x - pos[0], 2) +
-        Math.pow(point.y - pos[1], 2) +
-        Math.pow(point.z - pos[2], 2)
+  // Handle pointer down to track drag start
+  const handlePointerDown = (event) => {
+    setDragStart({ x: event.clientX, y: event.clientY });
+    setIsDragging(false);
+  };
+
+  // Handle pointer move to detect dragging
+  const handlePointerMove = (event) => {
+    if (dragStart) {
+      const distance = Math.sqrt(
+        Math.pow(event.clientX - dragStart.x, 2) +
+        Math.pow(event.clientY - dragStart.y, 2)
       );
-      if (dist < minDist) {
-        minDist = dist;
-        closestType = types[idx];
+      if (distance > 5) { // Threshold for drag detection
+        setIsDragging(true);
       }
-    });
-    
-    if (closestType) {
-      onTypeSelect(closestType);
     }
+  };
+
+  // Handle pointer up - only select if not dragging
+  const handlePointerUp = (event) => {
+    if (!isDragging && !isTopOrBottom) {
+      // Get click position relative to face
+      const point = event.point;
+      
+      // Simple distance-based detection to nearest quadrant center
+      let minDist = Infinity;
+      let closestType = null;
+      
+      quadrantPositions.forEach((pos, idx) => {
+        const dist = Math.sqrt(
+          Math.pow(point.x - pos[0], 2) +
+          Math.pow(point.y - pos[1], 2) +
+          Math.pow(point.z - pos[2], 2)
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          closestType = types[idx];
+        }
+      });
+      
+      if (closestType) {
+        onTypeSelect(closestType);
+      }
+    }
+    setDragStart(null);
+    setIsDragging(false);
   };
 
   return (
@@ -187,15 +250,21 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       <mesh 
         ref={meshRef} 
         geometry={geometry}
-        onClick={handleFaceClick}
-        onPointerOver={(e) => { document.body.style.cursor = 'pointer'; }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerOver={(e) => { 
+          if (!isTopOrBottom) document.body.style.cursor = 'pointer'; 
+        }}
         onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
       >
         <meshStandardMaterial
-          color={isActive ? '#ff8800' : '#333333'}
-          opacity={isActive ? 0.6 : 0.3}
-          transparent
+          color={isTopOrBottom ? '#2a2a2a' : (isActive ? '#ff8800' : '#3a3a3a')}
+          opacity={1.0}
+          transparent={false}
           side={THREE.DoubleSide}
+          depthWrite={true}
+          depthTest={true}
         />
       </mesh>
       
@@ -208,6 +277,7 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
           isSelected={type === selectedType}
           onClick={onTypeSelect}
           faceNormal={faceNormal}
+          isTopOrBottom={isTopOrBottom}
         />
       ))}
       
@@ -234,24 +304,20 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
           if (stackPosition === -1) return null;
           
           return (
-            <group 
-              key={idx} 
+            <Text
+              key={idx}
               position={pos}
-              ref={el => numberRefs.current[idx] = el}
+              fontSize={0.25}
+              color="white"
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.02}
+              outlineColor="black"
+              rotation={faceNormal}
+              renderOrder={1}
             >
-              <Text
-                fontSize={0.25}
-                color="white"
-                anchorX="center"
-                anchorY="middle"
-                outlineWidth={0.02}
-                outlineColor="black"
-                renderOrder={1}
-              >
-                <meshBasicMaterial attach="material" depthTest={false} />
-                {stackPosition + 1}
-              </Text>
-            </group>
+              {stackPosition + 1}
+            </Text>
           );
         });
       })() }
@@ -290,13 +356,13 @@ const GridLines = ({ face, isActive }) => {
   return (
     <lineSegments 
       geometry={geometry} 
-      renderOrder={1}
+      renderOrder={0.5}
       frustumCulled={false}
     >
       <lineBasicMaterial 
         color={isActive ? "#ff69b4" : "#ffffff"}
-        depthWrite={false}
-        depthTest={false}
+        depthWrite={true}
+        depthTest={true}
         transparent={false}
       />
     </lineSegments>
@@ -462,9 +528,9 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
   
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} intensity={0.5} />
-      <pointLight position={[-10, -10, -10]} intensity={0.3} />
+      <ambientLight intensity={0.7} />
+      <pointLight position={[10, 10, 10]} intensity={0.8} />
+      <pointLight position={[-10, -10, -10]} intensity={0.5} />
       
       <group ref={groupRef}>
         {Object.entries(corners).map(([func, pos]) => (
@@ -486,6 +552,11 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
         
         {Object.entries(faces).map(([quadrant, { vertices, types }]) => {
           const isActive = types.includes(selectedType);
+          
+          // Check if this is a top or bottom face (constant Y coordinate)
+          const ys = new Set(vertices.map(v => v[1]));
+          const isTopOrBottom = ys.size === 1;
+          
           return (
             <React.Fragment key={quadrant}>
               <CubeFace
@@ -496,10 +567,11 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
                 onTypeSelect={handleTypeSelect}
                 mbtiData={mbtiData}
                 corners={corners}
+                isTopOrBottom={isTopOrBottom}
               />
               <GridLines
                 face={vertices}
-                isActive={isActive}
+                isActive={isActive && !isTopOrBottom}
               />
             </React.Fragment>
           );
