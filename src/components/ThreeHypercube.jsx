@@ -311,22 +311,31 @@ const adjacentVerticalShader = `
   uniform float fadeDirection; // 1.0 for left-to-right fade, -1.0 for right-to-left
   uniform float columnPosition; // 0.0 for left column, 1.0 for right column
   uniform float flipGradient; // 1.0 to flip gradient direction
+  uniform float rotateGradient; // 1.0 to rotate 90 degrees clockwise
   
   varying vec2 vUv;
   
   void main() {
+    vec2 uv = vUv;
+    
+    // Apply 90 degree clockwise rotation if needed
+    if (rotateGradient > 0.5) {
+      // 90 degrees clockwise: new_x = 1 - old_y, new_y = old_x
+      uv = vec2(1.0 - vUv.y, vUv.x);
+    }
+    
     // Vertical gradient - flip if needed for face orientation
-    float gradientT = flipGradient > 0.5 ? (1.0 - vUv.y) : vUv.y;
+    float gradientT = flipGradient > 0.5 ? (1.0 - uv.y) : uv.y;
     vec3 gradientColor = mix(colorStart, colorEnd, gradientT);
     
     // Calculate position within the column (0 to 1 within the half)
     float columnU;
     if (columnPosition < 0.5) {
       // Left column
-      columnU = vUv.x * 2.0; // Map 0-0.5 to 0-1
+      columnU = uv.x * 2.0; // Map 0-0.5 to 0-1
     } else {
       // Right column
-      columnU = (vUv.x - 0.5) * 2.0; // Map 0.5-1 to 0-1
+      columnU = (uv.x - 0.5) * 2.0; // Map 0.5-1 to 0-1
     }
     
     // Horizontal opacity fade within the column
@@ -343,10 +352,10 @@ const adjacentVerticalShader = `
     float columnMask;
     if (columnPosition < 0.5) {
       // Left column - show on left half
-      columnMask = vUv.x < 0.5 ? 1.0 : 0.0;
+      columnMask = uv.x < 0.5 ? 1.0 : 0.0;
     } else {
       // Right column - show on right half
-      columnMask = vUv.x >= 0.5 ? 1.0 : 0.0;
+      columnMask = uv.x >= 0.5 ? 1.0 : 0.0;
     }
     
     // Mix gradient color with black based on opacity
@@ -364,25 +373,45 @@ const solidColorFadeShader = `
   uniform vec3 colorRight;
   uniform float fadeDirection; // 1.0 for bottom-to-top, -1.0 for top-to-bottom
   uniform float isBottomFace; // 1.0 for bottom face, 0.0 for top face
+  uniform float rotateMode; // 1.0 for clockwise, -1.0 for counter-clockwise, 0.0 for none
   
   varying vec2 vUv;
   
   void main() {
-    // Adjust UV coordinates based on face
+    // Adjust UV coordinates based on face and rotation mode
     vec2 adjustedUV = vUv;
     vec3 color;
     
+    // Apply rotations based on mode
     if (isBottomFace > 0.5) {
-      // Bottom face: rotate counterclockwise by 90 degrees
-      // Rotate: (x,y) -> (-y, x) which in UV space (0-1) is (1-y, x)
-      adjustedUV = vec2(1.0 - vUv.y, vUv.x);
-      // Flip colors as requested
-      color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+      // Bottom face
+      if (rotateMode > 0.5) {
+        // Ne-Fe-Ti-Si selected: apply 90 clockwise from current normal position
+        // Normal bottom has no rotation, so from there apply 90 CW
+        // But we need to go from no rotation to 90 CW
+        // Try going to 180 degrees first
+        adjustedUV = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+        color = adjustedUV.x < 0.5 ? colorLeft : colorRight;
+      } else {
+        // Normal bottom face: no rotation from base
+        adjustedUV = vUv;
+        color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+      }
     } else {
-      // Top face: rotate 180 degrees and flip colors
-      adjustedUV = vec2(1.0 - vUv.x, 1.0 - vUv.y);
-      // Flip colors as requested
-      color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+      // Top face
+      if (rotateMode > 1.5) {
+        // Ne-Fe-Ti-Si selected: apply 270 degree rotation (90 clockwise)
+        adjustedUV = vec2(1.0 - vUv.y, vUv.x);
+        color = adjustedUV.x < 0.5 ? colorLeft : colorRight;
+      } else if (rotateMode < -0.5) {
+        // Old counter-clockwise rotation (not used anymore)
+        adjustedUV = vec2(vUv.y, 1.0 - vUv.x);
+        color = adjustedUV.x < 0.5 ? colorLeft : colorRight;
+      } else {
+        // Normal top face: rotate 180 degrees
+        adjustedUV = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+        color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+      }
     }
     
     // Vertical opacity fade (only one row)
@@ -742,41 +771,105 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         
         // Check face orientation - different faces may have different UV orientations
         // Log which types are where to debug the issue
-        // Face types logging removed
         
         // Check if this is the Ne-Fe-Ti-Si face (contains ENTP, ISFJ) which needs gradient flip
         const needsFlip = types.includes('ENTP') && types.includes('ISFJ');
         flipGradient = needsFlip ? 1.0 : 0.0;
         
+        // Check if this is an adjacent face to Ne-Fe-Ti-Si that needs rotation
+        const selectedFaceIsNeFeTiSi = adjacencyInfo.selectedFaceTypes && adjacencyInfo.selectedFaceTypes.includes('ENTP');
+        const isNiFeTiSeFaceAdjacent = types.includes('INFJ') && types.includes('ENFJ');  // Left adjacent
+        const isNeTeFiSiFaceAdjacent = types.includes('INFP') && types.includes('ENFP');  // Right adjacent
+        let rotateGradient = 0.0;
+        
+        if (selectedFaceIsNeFeTiSi && (isNiFeTiSeFaceAdjacent || isNeTeFiSiFaceAdjacent)) {
+          // Both adjacent faces to Ne-Fe-Ti-Si need 90 degree clockwise rotation
+          rotateGradient = 1.0;
+        }
+        
+        
         // Check which face this is to determine correct column position
         const isNiTeFiSeFace = types.includes('INTJ') && types.includes('ENTJ');
+        const isNiFeTiSeFace = types.includes('INFJ') && types.includes('ENFJ');
         
         if (adjacencyInfo.relationship === 'left') {
           // This face is to the LEFT of the selected face
-          // It shares the LEFT edge of the selected face, which has the LEFT gradient (dominant/color1)
-          colorStart = selectedTypeConfig.color1Start;
-          colorEnd = selectedTypeConfig.color1End;
+          // Need to determine which gradient based on which edge is shared
           
-          // For Ni-Te-Fi-Se face, the shared edge is on the left (where INTJ/ENTJ are)
-          // So the gradient should appear on the LEFT column
+          // For Ne-Fe-Ti-Si face, left adjacent is Ni-Fe-Ti-Se (shares Fe-Ti edge)
+          // For ISFJ/ESFJ, Fe-Ti gradient is in color1
+          // For INTP/ENTP, Fe-Ti gradient is in color2
+          const isNeFeTiSiFace = adjacencyInfo.selectedFaceTypes && adjacencyInfo.selectedFaceTypes.includes('ENTP');
+          
+          if (isNeFeTiSiFace) {
+            // On Ne-Fe-Ti-Si face, determine which gradient represents Fe-Ti
+            const selectedType = adjacencyInfo.selectedType;
+            if (selectedType === 'ISFJ' || selectedType === 'ESFJ') {
+              // For ISFJ/ESFJ, Fe-Ti is color1
+              colorStart = selectedTypeConfig.color1Start;
+              colorEnd = selectedTypeConfig.color1End;
+            } else if (selectedType === 'INTP') {
+              // For INTP, Ti→Fe is dominant (color1: red→blue)
+              colorStart = selectedTypeConfig.color1Start;
+              colorEnd = selectedTypeConfig.color1End;
+            } else if (selectedType === 'ENTP') {
+              // For ENTP, Ti→Fe is auxiliary (color1: orange→cyan)
+              colorStart = selectedTypeConfig.color1Start;
+              colorEnd = selectedTypeConfig.color1End;
+            }
+          } else {
+            // Default behavior for other faces
+            colorStart = selectedTypeConfig.color1Start;
+            colorEnd = selectedTypeConfig.color1End;
+          }
+          
+          // For certain faces, the shared edge position determines the column
+          // Ni-Te-Fi-Se: shared edge is on the left (where INTJ/ENTJ are)
+          // Ni-Fe-Ti-Se: shared edge is on the right (where INFJ/ISTP are)
           if (isNiTeFiSeFace) {
             fadeDirection = 1.0; // Fade left-to-right (100% at left, 0% at right)
             columnPosition = 0.0; // Left column of this face
-            // Left adjacent gradient on left column
-          } else {
+          } else if (isNiFeTiSeFace) {
             fadeDirection = -1.0; // Fade right-to-left (100% at right, 0% at left)
             columnPosition = 1.0; // Right column of this face
-            // Left adjacent gradient on right column
+          } else {
+            // Default: left adjacent shows on right column
+            fadeDirection = -1.0; // Fade right-to-left (100% at right, 0% at left)
+            columnPosition = 1.0; // Right column of this face
           }
-          // Gradient details removed from logs
         } else {
           // This face is to the RIGHT of the selected face
-          // It shares the RIGHT edge of the selected face, which has the RIGHT gradient (auxiliary/color2)
-          colorStart = selectedTypeConfig.color2Start;
-          colorEnd = selectedTypeConfig.color2End;
+          // Need to determine which gradient based on which edge is shared
+          
+          // For Ne-Fe-Ti-Si face, right adjacent is Ne-Te-Fi-Si (shares Ne-Si edge)
+          // For ISFJ/ESFJ, Ne-Si gradient is in color2
+          // For INTP/ENTP, Ne-Si gradient is in color1
+          const isNeFeTiSiFace = adjacencyInfo.selectedFaceTypes && adjacencyInfo.selectedFaceTypes.includes('ENTP');
+          
+          if (isNeFeTiSiFace) {
+            // On Ne-Fe-Ti-Si face, determine which gradient represents Ne-Si
+            const selectedType = adjacencyInfo.selectedType;
+            if (selectedType === 'ISFJ' || selectedType === 'ESFJ') {
+              // For ISFJ/ESFJ, Ne-Si is color2
+              colorStart = selectedTypeConfig.color2Start;
+              colorEnd = selectedTypeConfig.color2End;
+            } else if (selectedType === 'INTP') {
+              // For INTP, Ne→Si is auxiliary (color2: orange→cyan)
+              colorStart = selectedTypeConfig.color2Start;
+              colorEnd = selectedTypeConfig.color2End;
+            } else if (selectedType === 'ENTP') {
+              // For ENTP, Ne→Si is dominant (color2: red→blue)
+              colorStart = selectedTypeConfig.color2Start;
+              colorEnd = selectedTypeConfig.color2End;
+            }
+          } else {
+            // Default behavior for other faces
+            colorStart = selectedTypeConfig.color2Start;
+            colorEnd = selectedTypeConfig.color2End;
+          }
+          
           fadeDirection = 1.0; // Fade left-to-right (100% at left, 0% at right)
           columnPosition = 0.0; // Left column of this face
-          // Right adjacent gradient details removed
         }
         
         const material = new THREE.ShaderMaterial({
@@ -787,7 +880,8 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
             colorEnd: { value: colorEnd },
             fadeDirection: { value: fadeDirection },
             columnPosition: { value: columnPosition },
-            flipGradient: { value: flipGradient }
+            flipGradient: { value: flipGradient },
+            rotateGradient: { value: rotateGradient }
           },
           transparent: true,
           side: THREE.DoubleSide,
@@ -804,23 +898,57 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         const selectedTypeConfig = getGradientColors(adjacencyInfo.selectedType);
         if (!selectedTypeConfig) return;
         
-        let colorLeft, colorRight, fadeDirection, isBottomFace;
+        let colorLeft, colorRight, fadeDirection, isBottomFace, rotateMode;
+        
+        // Check if selected face is Ne-Fe-Ti-Si (needs rotation and color swap)
+        const selectedFaceIsNeFeTiSi = adjacencyInfo.selectedFaceTypes && adjacencyInfo.selectedFaceTypes.includes('ENTP');
         
         if (adjacencyInfo.isTop) {
           // Use start colors (top of gradients)
-          // For INFJ: Left gradient starts with Red, Right gradient starts with Orange
-          colorLeft = selectedTypeConfig.color1Start;  // Red
-          colorRight = selectedTypeConfig.color2Start; // Orange
+          if (selectedFaceIsNeFeTiSi) {
+            // For Ne-Fe-Ti-Si face, some types have inverted gradients
+            const selectedType = adjacencyInfo.selectedType;
+            if (selectedType === 'ISFJ' || selectedType === 'ESFJ') {
+              // These types have inverted gradients, so use end colors for top and swap
+              colorLeft = selectedTypeConfig.color2End;    // Swapped
+              colorRight = selectedTypeConfig.color1End;   // Swapped
+            } else {
+              // INTP/ENTP use END colors (opposite of ISFJ/ESFJ) and swap
+              colorLeft = selectedTypeConfig.color2End;    // Swapped
+              colorRight = selectedTypeConfig.color1End;   // Swapped
+            }
+            rotateMode = 2.0; // 180 degree rotation
+            console.log('Top face: applying counter-clockwise rotation for Ne-Fe-Ti-Si');
+          } else {
+            colorLeft = selectedTypeConfig.color1Start;  // Normal
+            colorRight = selectedTypeConfig.color2Start; // Normal
+            rotateMode = 0.0; // No rotation
+          }
           fadeDirection = 1.0; // Fade bottom-to-top
           isBottomFace = 0.0;
         } else {
           // Use end colors (bottom of gradients)
-          // For INFJ: Left gradient ends with Blue, Right gradient ends with Cyan
-          colorLeft = selectedTypeConfig.color1End;   // Blue
-          colorRight = selectedTypeConfig.color2End;  // Cyan
+          if (selectedFaceIsNeFeTiSi) {
+            // For Ne-Fe-Ti-Si face, some types have inverted gradients
+            const selectedType = adjacencyInfo.selectedType;
+            if (selectedType === 'ISFJ' || selectedType === 'ESFJ') {
+              // These types have inverted gradients, so use start colors for bottom and swap
+              colorLeft = selectedTypeConfig.color2Start;   // Swapped
+              colorRight = selectedTypeConfig.color1Start;  // Swapped
+            } else {
+              // INTP/ENTP use START colors (opposite of ISFJ/ESFJ) and swap
+              colorLeft = selectedTypeConfig.color2Start;   // Swapped
+              colorRight = selectedTypeConfig.color1Start;   // Swapped
+            }
+            rotateMode = 1.0; // Clockwise rotation
+            console.log('Bottom face: applying clockwise rotation for Ne-Fe-Ti-Si');
+          } else {
+            colorLeft = selectedTypeConfig.color1End;    // Normal
+            colorRight = selectedTypeConfig.color2End;   // Normal
+            rotateMode = 0.0; // No rotation
+          }
           fadeDirection = -1.0; // Fade top-to-bottom
           isBottomFace = 1.0;
-          // Bottom face color logging removed
         }
         
         const material = new THREE.ShaderMaterial({
@@ -830,7 +958,8 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
             colorLeft: { value: colorLeft },
             colorRight: { value: colorRight },
             fadeDirection: { value: fadeDirection },
-            isBottomFace: { value: isBottomFace }
+            isBottomFace: { value: isBottomFace },
+            rotateMode: { value: rotateMode }
           },
           transparent: true,
           side: THREE.DoubleSide,
@@ -1134,8 +1263,6 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         }
       }
       
-      // The types are now properly ordered by vertex position
-      console.log(`Click: vertex ${clickedVertexIndex} → ${clickedType}`);
       
       if (clickedType) {
         onTypeSelect(clickedType);
@@ -1557,7 +1684,7 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
       },
       'Ne-Fe-Ti-Si': {
         vertices: orderFaceVertices(['Ne', 'Fe', 'Ti', 'Si']),
-        types: ['INTP', 'ENTP', 'ISFJ', 'ESFJ'] // Ti, Ne, Si, Fe order
+        types: ['ENTP', 'ESFJ', 'INTP', 'ISFJ'] // Ne, Fe, Ti, Si vertex order
       },
       // Top face (Y = 1.5) - Functions with Y = 1.5: Ni, Fe, Te, Si
       'top': {
