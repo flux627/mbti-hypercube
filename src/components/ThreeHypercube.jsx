@@ -5,19 +5,6 @@ import * as THREE from 'three';
 
 const CubeVertex = ({ position, label, isActive }) => {
   const meshRef = useRef();
-  const textRef = useRef();
-  
-  // Check if this vertex is at the bottom (Y = -1 * scale)
-  const isBottom = position[1] < 0;
-  const labelOffset = isBottom ? -0.25 : 0.25;
-  
-  // Manual billboard implementation - make text face the camera
-  useFrame(({ camera }) => {
-    if (textRef.current) {
-      // Make the text look at the camera
-      textRef.current.lookAt(camera.position);
-    }
-  });
   
   return (
     <group position={position}>
@@ -25,19 +12,6 @@ const CubeVertex = ({ position, label, isActive }) => {
         <sphereGeometry args={[0.1, 16, 16]} />
         <meshStandardMaterial color={isActive ? '#ff4444' : '#4444ff'} />
       </mesh>
-      <group ref={textRef} position={[0, labelOffset, 0]}>
-        <Text
-          fontSize={0.2}
-          color="white"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.015}
-          outlineColor="black"
-          renderOrder={2}
-        >
-          {label}
-        </Text>
-      </group>
     </group>
   );
 };
@@ -51,6 +25,8 @@ const CubeEdge = ({ start, end }) => {
       color="#666666"
       lineWidth={2}
       dashed={false}
+      depthWrite={true}
+      depthTest={true}
     />
   );
 };
@@ -128,7 +104,39 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     return geo;
   }, [vertices]);
 
-  // Calculate quadrant positions
+  // Calculate function label positions (in center of each quadrant)
+  const functionLabelPositions = useMemo(() => {
+    // Calculate center of face
+    const faceCenter = vertices.reduce((acc, v) => 
+      acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
+    
+    // Calculate face normal for offset
+    const [v0, v1, v2] = vertices;
+    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+    const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
+    let normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    // Ensure normal points outward from cube center (0,0,0)
+    const faceCenterVec = new THREE.Vector3(...faceCenter);
+    if (normal.dot(faceCenterVec) < 0) {
+      normal.multiplyScalar(-1);
+    }
+    
+    // Position function labels in the center of each quadrant (halfway between vertex and center)
+    // with slight offset along normal to prevent z-fighting
+    const positions = vertices.map(v => {
+      const basePos = v.map((c, i) => (v[i] + faceCenter[i]) / 2);
+      return [
+        basePos[0] + normal.x * 0.02,
+        basePos[1] + normal.y * 0.02,
+        basePos[2] + normal.z * 0.02
+      ];
+    });
+    
+    return positions;
+  }, [vertices]);
+
+  // Calculate quadrant positions (for type labels)
   const quadrantPositions = useMemo(() => {
     // Calculate center of face
     const faceCenter = vertices.reduce((acc, v) => 
@@ -146,10 +154,17 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       normal.multiplyScalar(-1);
     }
     
-    // Position for each type's label (halfway between vertex and center)
+    // Position for each type's label
+    // Horizontal: 75% toward vertex (for width)
+    // Vertical: 82% toward vertex (compensating for text height being smaller than width)
     // with slight offset along normal to prevent z-fighting
     const positions = vertices.map(v => {
-      const basePos = v.map((c, i) => (c + faceCenter[i]) / 2);
+      // Different ratios for different axes to account for text shape
+      const basePos = [
+        v[0] * 0.75 + faceCenter[0] * 0.25,  // X axis - 75%
+        v[1] * 0.82 + faceCenter[1] * 0.18,  // Y axis - 82% (closer to edge vertically)
+        v[2] * 0.75 + faceCenter[2] * 0.25   // Z axis - 75%
+      ];
       return [
         basePos[0] + normal.x * 0.02,
         basePos[1] + normal.y * 0.02,
@@ -218,10 +233,10 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       normal.multiplyScalar(-1);
     }
     
-    // Position numbers between each vertex and center (closer to center)
+    // Position numbers much closer to center (20% from center toward vertex)
     // with slight offset along normal to prevent z-fighting
     return vertices.map(v => {
-      const basePos = v.map((c, i) => c * 0.3 + faceCenter[i] * 0.7);
+      const basePos = v.map((c, i) => v[i] * 0.2 + faceCenter[i] * 0.8);
       return [
         basePos[0] + normal.x * 0.02,
         basePos[1] + normal.y * 0.02,
@@ -304,8 +319,38 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         />
       </mesh>
       
-      {/* Type labels for each quadrant */}
-      {types.map((type, idx) => (
+      {/* Function labels in center of each quadrant - only for side faces */}
+      {!isTopOrBottom && vertices.map((vert, idx) => {
+        // Find which function this vertex represents
+        let func = null;
+        for (const [f, coord] of Object.entries(corners)) {
+          if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+            func = f;
+            break;
+          }
+        }
+        
+        if (!func) return null;
+        
+        return (
+          <Text
+            key={`func-${idx}`}
+            position={functionLabelPositions[idx]}
+            fontSize={0.36}
+            color="#cccccc"
+            anchorX="center"
+            anchorY="middle"
+            rotation={faceNormal}
+            outlineWidth={0.02}
+            outlineColor="black"
+          >
+            {func}
+          </Text>
+        );
+      })}
+      
+      {/* Type labels for each quadrant - only for side faces */}
+      {!isTopOrBottom && types.map((type, idx) => (
         <FaceQuadrant
           key={type}
           position={quadrantPositions[idx]}
@@ -343,14 +388,13 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
             <Text
               key={idx}
               position={pos}
-              fontSize={0.25}
+              fontSize={0.225}
               color="white"
               anchorX="center"
               anchorY="middle"
               outlineWidth={0.02}
               outlineColor="black"
               rotation={faceNormal}
-              renderOrder={1}
             >
               {stackPosition + 1}
             </Text>
@@ -392,7 +436,6 @@ const GridLines = ({ face, isActive }) => {
   return (
     <lineSegments 
       geometry={geometry} 
-      renderOrder={0.5}
       frustumCulled={false}
     >
       <lineBasicMaterial 
@@ -460,6 +503,10 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
     };
     
     const orderFaceVertices = (funcs) => {
+      if (!funcs) {
+        // For top/bottom faces, return null
+        return null;
+      }
       const indices = funcs.map(f => funcToCoord[f]);
       const verts = indices.map(i => corners[Object.keys(corners)[i]]);
       
@@ -547,6 +594,26 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
       'Ne-Fe-Ti-Si': {
         vertices: orderFaceVertices(['Ne', 'Fe', 'Ti', 'Si']),
         types: ['INTP', 'ENTP', 'ISFJ', 'ESFJ'] // Ti, Ne, Si, Fe order
+      },
+      // Top face (Y = 1.5) - Functions with Y = 1.5: Ni, Fe, Te, Si
+      'top': {
+        vertices: [
+          corners['Ni'], // [-1.5, 1.5, -1.5]
+          corners['Te'], // [1.5, 1.5, -1.5]
+          corners['Si'], // [1.5, 1.5, 1.5]
+          corners['Fe']  // [-1.5, 1.5, 1.5]
+        ],
+        types: [] // No types on top/bottom
+      },
+      // Bottom face (Y = -1.5) - Functions with Y = -1.5: Se, Ti, Fi, Ne
+      'bottom': {
+        vertices: [
+          corners['Se'], // [-1.5, -1.5, -1.5]
+          corners['Fi'], // [1.5, -1.5, -1.5]
+          corners['Ne'], // [1.5, -1.5, 1.5]
+          corners['Ti']  // [-1.5, -1.5, 1.5]
+        ],
+        types: [] // No types on top/bottom
       }
     };
     return quadrantFaces;
