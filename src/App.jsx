@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import TypeSelector from './components/TypeSelector';
 import HypercubePlot from './components/HypercubePlot';
+import ThreeHypercube from './components/ThreeHypercube';
+import { mbtiData, typeToQuadrant, getActiveFunctions } from './data/mbtiData';
 import './App.css';
 
 function App() {
   const [selectedType, setSelectedType] = useState('INFJ');
+  const [useThreeJS, setUseThreeJS] = useState(true);
 
   return (
     <div className="app">
@@ -21,9 +24,24 @@ function App() {
           selectedType={selectedType} 
           onTypeChange={setSelectedType} 
         />
+        <button 
+          onClick={() => setUseThreeJS(!useThreeJS)}
+          style={{ marginLeft: '20px', padding: '5px 10px' }}
+        >
+          Switch to {useThreeJS ? 'Plotly' : 'Three.js'}
+        </button>
       </div>
 
-      <HypercubePlot selectedType={selectedType} />
+      {useThreeJS ? (
+        <ThreeHypercube 
+          selectedType={selectedType}
+          mbtiData={mbtiData}
+          typeToQuadrant={typeToQuadrant}
+          getActiveFunctions={getActiveFunctions}
+        />
+      ) : (
+        <HypercubePlot selectedType={selectedType} />
+      )}
     </div>
   );
 }

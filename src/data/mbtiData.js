@@ -39,3 +39,16 @@ export const groups = [
   { label: 'Functions: {Fi, Ne, Si, Te}', types: ['INFP', 'ENFP', 'ISTJ', 'ESTJ'] },
   { label: 'Functions: {Ti, Ne, Si, Fe}', types: ['INTP', 'ENTP', 'ISFJ', 'ESFJ'] },
 ];
+
+export const mbtiData = typeStacks;
+
+export const typeToQuadrant = {
+  'INFJ': 'Ni-Fe-Ti-Se', 'ENFJ': 'Ni-Fe-Ti-Se', 'ISTP': 'Ni-Fe-Ti-Se', 'ESTP': 'Ni-Fe-Ti-Se',
+  'INTJ': 'Ni-Te-Fi-Se', 'ENTJ': 'Ni-Te-Fi-Se', 'ISFP': 'Ni-Te-Fi-Se', 'ESFP': 'Ni-Te-Fi-Se',
+  'INFP': 'Ne-Te-Fi-Si', 'ENFP': 'Ne-Te-Fi-Si', 'ISTJ': 'Ne-Te-Fi-Si', 'ESTJ': 'Ne-Te-Fi-Si',
+  'INTP': 'Ne-Fe-Ti-Si', 'ENTP': 'Ne-Fe-Ti-Si', 'ISFJ': 'Ne-Fe-Ti-Si', 'ESFJ': 'Ne-Fe-Ti-Si'
+};
+
+export const getActiveFunctions = (type) => {
+  return typeStacks[type] || [];
+};
