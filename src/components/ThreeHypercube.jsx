@@ -678,15 +678,6 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
       
       <group ref={groupRef}>
-        {Object.entries(corners).map(([func, pos]) => (
-          <CubeVertex
-            key={func}
-            position={pos}
-            label={func}
-            isActive={activeFunctions.includes(func)}
-          />
-        ))}
-        
         {edges.map(([start, end], idx) => (
           <CubeEdge
             key={idx}
