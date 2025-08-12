@@ -1,26 +1,42 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text, Line, Box, Plane } from '@react-three/drei';
+import { OrbitControls, Text, Line, Box, Plane, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 
 const CubeVertex = ({ position, label, isActive }) => {
+  const meshRef = useRef();
+  const textRef = useRef();
+  
+  // Check if this vertex is at the bottom (Y = -1 * scale)
+  const isBottom = position[1] < 0;
+  const labelOffset = isBottom ? -0.25 : 0.25;
+  
+  // Manual billboard implementation - make text face the camera
+  useFrame(({ camera }) => {
+    if (textRef.current) {
+      // Make the text look at the camera
+      textRef.current.lookAt(camera.position);
+    }
+  });
+  
   return (
     <group position={position}>
-      <mesh>
+      <mesh ref={meshRef}>
         <sphereGeometry args={[0.1, 16, 16]} />
         <meshStandardMaterial color={isActive ? '#ff4444' : '#4444ff'} />
       </mesh>
-      <Text
-        position={[0, 0.25, 0]}
-        fontSize={0.2}
-        color="white"
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.015}
-        outlineColor="black"
-      >
-        {label}
-      </Text>
+      <group ref={textRef} position={[0, labelOffset, 0]}>
+        <Text
+          fontSize={0.2}
+          color="white"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.015}
+          outlineColor="black"
+        >
+          {label}
+        </Text>
+      </group>
     </group>
   );
 };
