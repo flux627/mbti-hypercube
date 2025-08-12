@@ -3,6 +3,56 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Box, Plane, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 
+// Gradient shader for selected faces
+const gradientVertexShader = `
+  varying vec2 vUv;
+  varying vec3 vPosition;
+  
+  void main() {
+    vUv = uv;
+    vPosition = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const gradientFragmentShader = `
+  uniform vec3 colorStart1;
+  uniform vec3 colorEnd1;
+  uniform vec3 colorStart2;
+  uniform vec3 colorEnd2;
+  uniform vec2 gradientStart1;
+  uniform vec2 gradientEnd1;
+  uniform vec2 gradientStart2;
+  uniform vec2 gradientEnd2;
+  uniform float opacity;
+  
+  varying vec2 vUv;
+  varying vec3 vPosition;
+  
+  void main() {
+    // UV coordinates are swapped - vUv.x is vertical, vUv.y is horizontal
+    // Create vertical gradients using vUv.x (which runs vertically)
+    float t = vUv.x;  // This should go from top to bottom
+    
+    // Create the gradients
+    vec3 gradient1 = mix(colorStart1, colorEnd1, t);  // Red to blue
+    vec3 gradient2 = mix(colorStart2, colorEnd2, t);  // Orange to cyan
+    
+    // Split into two columns using vUv.y
+    vec3 finalColor;
+    
+    if (vUv.y < 0.5) {
+      // LEFT column (but appears as right due to reversal)
+      finalColor = gradient2;  // Auxiliary
+    } else {
+      // RIGHT column (but appears as left due to reversal)
+      finalColor = gradient1;  // Dominant
+    }
+    
+    gl_FragColor = vec4(finalColor, opacity);
+  }
+`;
+
 const CubeVertex = ({ position, label, isActive }) => {
   const meshRef = useRef();
   
@@ -56,6 +106,124 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
   
   const isActive = types.includes(selectedType) && !isTopOrBottom;
   
+  // Create gradient material for selected faces with correct uniforms
+  const [gradientMaterial, setGradientMaterial] = useState(null);
+  
+  // Create material with correct gradient positions based on selected type
+  useEffect(() => {
+    if (isActive && !isTopOrBottom && types.includes(selectedType) && mbtiData[selectedType]) {
+      const stack = mbtiData[selectedType];
+      
+      // Find which functions are at each vertex
+      const vertexFunctionMap = {};
+      vertices.forEach((vert, idx) => {
+        for (const [func, coord] of Object.entries(corners)) {
+          if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+            vertexFunctionMap[idx] = func;
+            console.log(`  Vertex ${idx}: ${func} at position [${vert}]`);
+            break;
+          }
+        }
+      });
+      
+      // Map each function in the stack to its position on this face
+      const functionPositions = {};
+      stack.forEach((func, stackIdx) => {
+        Object.entries(vertexFunctionMap).forEach(([vertIdx, vertFunc]) => {
+          if (vertFunc === func) {
+            functionPositions[stackIdx] = parseInt(vertIdx);
+          }
+        });
+      });
+      
+      // Calculate UV coordinates for gradient start/end points
+      const v0 = new THREE.Vector3(...vertices[0]);
+      const v1 = new THREE.Vector3(...vertices[1]);
+      const v3 = new THREE.Vector3(...vertices[3]);
+      
+      const edge1 = new THREE.Vector3().subVectors(v1, v0);
+      const edge2 = new THREE.Vector3().subVectors(v3, v0);
+      
+      const calculateUV = (vertexIndex) => {
+        const vertex = new THREE.Vector3(...vertices[vertexIndex]);
+        const vec = new THREE.Vector3().subVectors(vertex, v0);
+        const u = vec.dot(edge1) / edge1.lengthSq();
+        const v = vec.dot(edge2) / edge2.lengthSq();
+        return [u, v];
+      };
+      
+      const uvMap = vertices.map((_, idx) => calculateUV(idx));
+      
+      // Calculate gradient positions based on the selected type's stack
+      const gradientStart1 = functionPositions[0] !== undefined ? uvMap[functionPositions[0]] : [0, 0];
+      const gradientEnd1 = functionPositions[3] !== undefined ? uvMap[functionPositions[3]] : [1, 1];
+      const gradientStart2 = functionPositions[1] !== undefined ? uvMap[functionPositions[1]] : [0, 1];
+      const gradientEnd2 = functionPositions[2] !== undefined ? uvMap[functionPositions[2]] : [1, 0];
+      
+      console.log(`Creating material for face [${types.join(',')}] with selected type: ${selectedType}`);
+      console.log(`  Stack: ${stack.join(' -> ')}`);
+      console.log(`  Vertex function map:`, vertexFunctionMap);
+      console.log(`  Function positions:`, functionPositions);
+      console.log(`  UV map:`, uvMap);
+      console.log(`  Vertex positions in 3D:`, vertices);
+      console.log(`  Dominant axis (${stack[0]} to ${stack[3]}):`);
+      console.log(`    ${stack[0]} at vertex ${functionPositions[0]} UV [${gradientStart1}]`);
+      console.log(`    ${stack[3]} at vertex ${functionPositions[3]} UV [${gradientEnd1}]`);
+      console.log(`    Direction: [${gradientEnd1[0] - gradientStart1[0]}, ${gradientEnd1[1] - gradientStart1[1]}]`);
+      console.log(`  Auxiliary axis (${stack[1]} to ${stack[2]}):`);
+      console.log(`    ${stack[1]} at vertex ${functionPositions[1]} UV [${gradientStart2}]`);
+      console.log(`    ${stack[2]} at vertex ${functionPositions[2]} UV [${gradientEnd2}]`);
+      console.log(`    Direction: [${gradientEnd2[0] - gradientStart2[0]}, ${gradientEnd2[1] - gradientStart2[1]}]`);
+      
+      // Calculate what we expect to see
+      const expectedVisual = `${selectedType} should show: TOP=${stack[1]}->${stack[2]} (orange->cyan), BOTTOM=${stack[0]}->${stack[3]} (red->blue)`;
+      console.log(expectedVisual);
+      
+      // Create a new material with the correct gradient positions
+      // Add unique ID to track material instances
+      const materialId = `${types.join(',')}-${selectedType}-${Date.now()}`;
+      console.log(`Creating material with ID: ${materialId}`);
+      
+      // Determine if gradients should be swapped based on selected type
+      // For testing: swap colors for ENFJ vs INFJ
+      const shouldSwap = selectedType === 'ENFJ' || selectedType === 'ESTP';
+      
+      const newMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          colorStart1: { value: shouldSwap ? new THREE.Color('#ff8a00') : new THREE.Color('#ff0000') },
+          colorEnd1: { value: shouldSwap ? new THREE.Color('#00aeff') : new THREE.Color('#0000ff') },
+          colorStart2: { value: shouldSwap ? new THREE.Color('#ff0000') : new THREE.Color('#ff8a00') },
+          colorEnd2: { value: shouldSwap ? new THREE.Color('#0000ff') : new THREE.Color('#00aeff') },
+          gradientStart1: { value: new THREE.Vector2(...gradientStart1) },
+          gradientEnd1: { value: new THREE.Vector2(...gradientEnd1) },
+          gradientStart2: { value: new THREE.Vector2(...gradientStart2) },
+          gradientEnd2: { value: new THREE.Vector2(...gradientEnd2) },
+          opacity: { value: 1.0 }
+        },
+        vertexShader: gradientVertexShader,
+        fragmentShader: gradientFragmentShader,
+        side: THREE.FrontSide,
+        transparent: false
+      });
+      
+      // Store ID on material for debugging
+      newMaterial.userData = { id: materialId, selectedType };
+      
+      setGradientMaterial(newMaterial);
+      
+      // Force Three.js to recognize the new material
+      newMaterial.needsUpdate = true;
+      
+      // Cleanup function disposes the material
+      return () => {
+        newMaterial.dispose();
+      };
+    } else {
+      // Clear material when not active
+      setGradientMaterial(null);
+    }
+  }, [isActive, isTopOrBottom, selectedType, types.join(','), vertices, corners, mbtiData]);
+  
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const verts = new Float32Array([
@@ -63,6 +231,42 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       ...vertices[0], ...vertices[2], ...vertices[3]
     ]);
     geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    
+    // Calculate proper UV coordinates based on vertex positions
+    // We need to map the 3D vertex positions to 2D UV coordinates
+    // Find two edge vectors to create a 2D coordinate system on the face
+    const v0 = new THREE.Vector3(...vertices[0]);
+    const v1 = new THREE.Vector3(...vertices[1]);
+    const v2 = new THREE.Vector3(...vertices[2]);
+    const v3 = new THREE.Vector3(...vertices[3]);
+    
+    // Create edge vectors
+    const edge1 = new THREE.Vector3().subVectors(v1, v0);
+    const edge2 = new THREE.Vector3().subVectors(v3, v0);
+    
+    // Calculate UV coordinates for each vertex
+    const calculateUV = (vertex) => {
+      const vec = new THREE.Vector3().subVectors(vertex, v0);
+      const u = vec.dot(edge1) / edge1.lengthSq();
+      const v = vec.dot(edge2) / edge2.lengthSq();
+      return [u, v];
+    };
+    
+    const uv0 = calculateUV(v0);
+    const uv1 = calculateUV(v1);
+    const uv2 = calculateUV(v2);
+    const uv3 = calculateUV(v3);
+    
+    const uvs = new Float32Array([
+      ...uv0,  // vertex 0
+      ...uv1,  // vertex 1
+      ...uv2,  // vertex 2
+      ...uv0,  // vertex 0 (repeated)
+      ...uv2,  // vertex 2 (repeated)
+      ...uv3   // vertex 3
+    ]);
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    
     geo.computeVertexNormals();
     return geo;
   }, [vertices]);
@@ -267,34 +471,81 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       const u = clickVec.dot(edge1) / edge1.lengthSq();
       const v = clickVec.dot(edge2) / edge2.lengthSq();
       
-      // Determine which quadrant was clicked based on u,v coordinates
-      // u < 0.5 = left, u >= 0.5 = right
-      // v < 0.5 = bottom, v >= 0.5 = top
-      let quadrantIndex;
+      // Find which function is at each vertex
+      const vertexFunctions = vertices.map((vert, idx) => {
+        for (const [func, coord] of Object.entries(corners)) {
+          if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+            return func;
+          }
+        }
+        return 'unknown';
+      });
+      
+      // Find which type has its dominant function at the clicked position
+      // The vertices form a quad with UV coordinates mapping as follows:
+      // Vertex 0: (0,0) - bottom-left
+      // Vertex 1: (1,0) - bottom-right  
+      // Vertex 2: (1,1) - top-right
+      // Vertex 3: (0,1) - top-left
+      
+      let clickedVertexIndex;
       if (u < 0.5 && v < 0.5) {
-        quadrantIndex = 0; // bottom-left
+        clickedVertexIndex = 0; // Bottom-left vertex
       } else if (u >= 0.5 && v < 0.5) {
-        quadrantIndex = 1; // bottom-right
+        clickedVertexIndex = 1; // Bottom-right vertex
       } else if (u >= 0.5 && v >= 0.5) {
-        quadrantIndex = 2; // top-right
+        clickedVertexIndex = 2; // Top-right vertex
       } else {
-        quadrantIndex = 3; // top-left
+        clickedVertexIndex = 3; // Top-left vertex
       }
       
-      const selectedType = types[quadrantIndex];
-      console.log(`Clicked quadrant ${quadrantIndex}, u=${u.toFixed(2)}, v=${v.toFixed(2)}, selecting type: ${selectedType}`);
+      const clickedFunction = vertexFunctions[clickedVertexIndex];
       
-      if (selectedType) {
-        onTypeSelect(selectedType);
+      // Find which type has this function as dominant (position 0 in stack)
+      let clickedType = null;
+      for (const type of types) {
+        if (mbtiData[type] && mbtiData[type][0] === clickedFunction) {
+          clickedType = type;
+          break;
+        }
+      }
+      
+      console.log(`Clicked vertex ${clickedVertexIndex} (u=${u.toFixed(2)}, v=${v.toFixed(2)})`);
+      console.log(`  Function at vertex: ${clickedFunction}`);
+      console.log(`  Type with ${clickedFunction} dominant: ${clickedType}`);
+      
+      if (clickedType) {
+        onTypeSelect(clickedType);
       }
     }
   };
 
+  // Use default material when gradient is not needed
+  const defaultMaterial = useMemo(() => {
+    return new THREE.MeshStandardMaterial({
+      color: isTopOrBottom ? '#2a2a2a' : '#3a3a3a',
+      opacity: 1.0,
+      transparent: false,
+      side: THREE.FrontSide,
+      depthWrite: true,
+      depthTest: true
+    });
+  }, [isTopOrBottom]);
+
+  // Choose which material to use
+  const material = isActive && gradientMaterial ? gradientMaterial : defaultMaterial;
+
+  // Force material update by using a unique key that includes face info
+  const faceId = types.join('-');
+  const meshKey = isActive ? `${faceId}-${selectedType}-active` : `${faceId}-inactive`;
+
   return (
     <group>
       <mesh 
+        key={meshKey}
         ref={meshRef} 
         geometry={geometry}
+        material={material}
         onPointerUp={handlePointerUp}
         onPointerOver={(e) => { 
           if (!isTopOrBottom) {
@@ -306,16 +557,7 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
           document.body.style.cursor = 'auto';
           setIsHovered(false);
         }}
-      >
-        <meshStandardMaterial
-          color={isTopOrBottom ? '#2a2a2a' : (isActive ? '#ff8800' : '#3a3a3a')}
-          opacity={1.0}
-          transparent={false}
-          side={THREE.FrontSide}
-          depthWrite={true}
-          depthTest={true}
-        />
-      </mesh>
+      />
       
       {/* Function labels in center of each quadrant - only for side faces */}
       {!isTopOrBottom && vertices.map((vert, idx) => {
