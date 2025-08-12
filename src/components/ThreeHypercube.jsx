@@ -127,34 +127,46 @@ const CubeFace = ({ vertices, isActive, functionStack, typePositions }) => {
 const GridLines = ({ face, isActive }) => {
   if (!isActive) return null;
   
-  const lines = useMemo(() => {
+  const geometry = useMemo(() => {
     const [v0, v1, v2, v3] = face;
-    const result = [];
     
-    const mid01 = v0.map((c, i) => (c + v1[i]) / 2);
-    const mid23 = v3.map((c, i) => (c + v2[i]) / 2);
-    result.push([mid01, mid23]);
+    // Calculate face normal to offset lines slightly
+    const center = v0.map((c, i) => (c + v1[i] + v2[i] + v3[i]) / 4);
+    const normal = center.map(c => c > 0 ? 0.01 : -0.01);
     
-    const mid03 = v0.map((c, i) => (c + v3[i]) / 2);
-    const mid12 = v1.map((c, i) => (c + v2[i]) / 2);
-    result.push([mid03, mid12]);
+    // Horizontal line through the middle
+    const mid01 = v0.map((c, i) => (c + v1[i]) / 2 + normal[i]);
+    const mid23 = v3.map((c, i) => (c + v2[i]) / 2 + normal[i]);
     
-    return result;
+    // Vertical line through the middle
+    const mid03 = v0.map((c, i) => (c + v3[i]) / 2 + normal[i]);
+    const mid12 = v1.map((c, i) => (c + v2[i]) / 2 + normal[i]);
+    
+    const positions = new Float32Array([
+      ...mid01, ...mid23,  // Horizontal line
+      ...mid03, ...mid12   // Vertical line
+    ]);
+    
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.computeBoundingSphere();
+    
+    return geo;
   }, [face]);
   
   return (
-    <>
-      {lines.map((line, idx) => (
-        <Line
-          key={idx}
-          points={line}
-          color="#444444"
-          lineWidth={1}
-          opacity={0.5}
-          transparent
-        />
-      ))}
-    </>
+    <lineSegments 
+      geometry={geometry} 
+      renderOrder={1}
+      frustumCulled={false}
+    >
+      <lineBasicMaterial 
+        color="#ff69b4"
+        depthWrite={false}
+        depthTest={false}
+        transparent={false}
+      />
+    </lineSegments>
   );
 };
 
