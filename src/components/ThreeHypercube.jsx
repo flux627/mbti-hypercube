@@ -131,19 +131,25 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
   // Calculate quadrant positions
   const quadrantPositions = useMemo(() => {
     // Calculate center of face
-    const center = vertices.reduce((acc, v) => 
+    const faceCenter = vertices.reduce((acc, v) => 
       acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
     // Calculate face normal for offset
     const [v0, v1, v2] = vertices;
     const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
     const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
-    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    let normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    // Ensure normal points outward from cube center (0,0,0)
+    const faceCenterVec = new THREE.Vector3(...faceCenter);
+    if (normal.dot(faceCenterVec) < 0) {
+      normal.multiplyScalar(-1);
+    }
     
     // Position for each type's label (halfway between vertex and center)
     // with slight offset along normal to prevent z-fighting
     const positions = vertices.map(v => {
-      const basePos = v.map((c, i) => (c + center[i]) / 2);
+      const basePos = v.map((c, i) => (c + faceCenter[i]) / 2);
       return [
         basePos[0] + normal.x * 0.02,
         basePos[1] + normal.y * 0.02,
@@ -156,16 +162,40 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
 
   // Calculate face normal for text rotation
   const faceNormal = useMemo(() => {
-    const [v0, v1, v2] = vertices;
-    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
-    const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
-    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    // Calculate center of face
+    const faceCenter = vertices.reduce((acc, v) => 
+      acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
-    // Determine rotation based on which face this is
-    if (Math.abs(normal.x) > 0.9) return [0, Math.PI / 2 * Math.sign(normal.x), 0];
-    if (Math.abs(normal.y) > 0.9) return [Math.PI / 2 * Math.sign(normal.y), 0, 0];
-    if (Math.abs(normal.z) > 0.9) return [0, 0, 0];
-    return [0, 0, 0];
+    // Determine rotation based on face center position
+    // Text should face outward from the cube center
+    if (Math.abs(faceCenter[0]) > Math.abs(faceCenter[1]) && Math.abs(faceCenter[0]) > Math.abs(faceCenter[2])) {
+      // X face (left or right)
+      if (faceCenter[0] < 0) {
+        // Left face (-X)
+        return [0, -Math.PI / 2, 0];
+      } else {
+        // Right face (+X)
+        return [0, Math.PI / 2, 0];
+      }
+    } else if (Math.abs(faceCenter[1]) > Math.abs(faceCenter[0]) && Math.abs(faceCenter[1]) > Math.abs(faceCenter[2])) {
+      // Y face (top or bottom)
+      if (faceCenter[1] < 0) {
+        // Bottom face (-Y)
+        return [-Math.PI / 2, 0, 0];
+      } else {
+        // Top face (+Y)
+        return [Math.PI / 2, 0, 0];
+      }
+    } else {
+      // Z face (front or back)
+      if (faceCenter[2] < 0) {
+        // Back face (-Z)
+        return [0, Math.PI, 0];
+      } else {
+        // Front face (+Z)
+        return [0, 0, 0];
+      }
+    }
   }, [vertices]);
 
   // Calculate number positions (near grid intersection when selected)
@@ -173,19 +203,25 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     if (!isActive) return [];
     
     // Calculate center of face
-    const center = vertices.reduce((acc, v) => 
+    const faceCenter = vertices.reduce((acc, v) => 
       acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
     
     // Calculate face normal for offset
     const [v0, v1, v2] = vertices;
     const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
     const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
-    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    let normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    // Ensure normal points outward from cube center (0,0,0)
+    const faceCenterVec = new THREE.Vector3(...faceCenter);
+    if (normal.dot(faceCenterVec) < 0) {
+      normal.multiplyScalar(-1);
+    }
     
     // Position numbers between each vertex and center (closer to center)
     // with slight offset along normal to prevent z-fighting
     return vertices.map(v => {
-      const basePos = v.map((c, i) => c * 0.3 + center[i] * 0.7);
+      const basePos = v.map((c, i) => c * 0.3 + faceCenter[i] * 0.7);
       return [
         basePos[0] + normal.x * 0.02,
         basePos[1] + normal.y * 0.02,
