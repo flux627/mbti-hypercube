@@ -137,6 +137,76 @@ const getGradientColors = (type) => {
   return gradientMappings[type] || null;
 };
 
+// Helper to determine face adjacency relationships
+const getFaceAdjacency = (selectedFaceTypes, allFaces) => {
+  // Map which faces share edges with which faces
+  // Debug logging
+  // Removed adjacency logging
+  
+  const adjacencyMap = {
+    // Face 0: Ni-Fe-Ti-Se (contains INFJ, ENFJ, ISTP, ESTP)
+    'ENFJ,ESTP,INFJ,ISTP': {
+      left: 'ENTJ,ESFP,INTJ,ISFP',   // Ni-Te-Fi-Se (shares Ni-Se edge) - should show red-blue (dominant)
+      right: 'ENTP,ESFJ,INTP,ISFJ',  // Ne-Fe-Ti-Si (shares Fe-Ti edge) - should show orange-cyan (auxiliary)
+    },
+    // Face 1: Ni-Te-Fi-Se  
+    'ENTJ,ESFP,INTJ,ISFP': {
+      left: 'ENFP,ESTJ,INFP,ISTJ',   // Ne-Te-Fi-Si (shares Te-Fi edge)
+      right: 'ENFJ,ESTP,INFJ,ISTP',  // Ni-Fe-Ti-Se (shares Ni-Se edge)
+    },
+    // Face 2: Ne-Te-Fi-Si
+    'ENFP,ESTJ,INFP,ISTJ': {
+      left: 'ENTP,ESFJ,INTP,ISFJ',   // Ne-Fe-Ti-Si (shares Ne-Si edge)
+      right: 'ENTJ,ESFP,INTJ,ISFP',  // Ni-Te-Fi-Se (shares Te-Fi edge)
+    },
+    // Face 3: Ne-Fe-Ti-Si
+    'ENTP,ESFJ,INTP,ISFJ': {
+      left: 'ENFJ,ESTP,INFJ,ISTP',   // Ni-Fe-Ti-Se (shares Fe-Ti edge)
+      right: 'ENFP,ESTJ,INFP,ISTJ',  // Ne-Te-Fi-Si (shares Ne-Si edge)
+    }
+  };
+  
+  const selectedKey = selectedFaceTypes.sort().join(',');
+  const adjacency = adjacencyMap[selectedKey] || {};
+  
+  // Removed adjacency mapping logs
+  
+  const result = {};
+  
+  // Check each face in allFaces to see if it's adjacent
+  for (const [faceKey, faceData] of Object.entries(allFaces)) {
+    if (!faceData.types) continue;
+    
+    const faceTypes = faceData.types.sort().join(',');
+    
+    if (faceTypes === adjacency.left) {
+      result[faceKey] = { isAdjacent: true, relationship: 'left' };
+      // Left adjacent face found
+    } else if (faceTypes === adjacency.right) {
+      result[faceKey] = { isAdjacent: true, relationship: 'right' };
+      // Right adjacent face found
+    }
+  }
+  
+  // Check for top/bottom faces (they don't have types array)
+  for (const [faceKey, faceData] of Object.entries(allFaces)) {
+    if (!faceData.types || faceData.types.length === 0) {
+      // This is a top or bottom face
+      const ys = new Set(faceData.vertices.map(v => v[1]));
+      if (ys.size === 1) {
+        const y = Array.from(ys)[0];
+        if (y > 0) {
+          result[faceKey] = { isTop: true };
+        } else {
+          result[faceKey] = { isBottom: true };
+        }
+      }
+    }
+  }
+  
+  return result;
+};
+
 // Gradient shader for selected faces
 const gradientVertexShader = `
   varying vec2 vUv;
@@ -234,6 +304,116 @@ const gradientFragmentShader = `
   }
 `;
 
+// Shader for adjacent vertical gradient columns with transparency fade
+const adjacentVerticalShader = `
+  uniform vec3 colorStart;
+  uniform vec3 colorEnd;
+  uniform float fadeDirection; // 1.0 for left-to-right fade, -1.0 for right-to-left
+  uniform float columnPosition; // 0.0 for left column, 1.0 for right column
+  uniform float flipGradient; // 1.0 to flip gradient direction
+  
+  varying vec2 vUv;
+  
+  void main() {
+    // Vertical gradient - flip if needed for face orientation
+    float gradientT = flipGradient > 0.5 ? (1.0 - vUv.y) : vUv.y;
+    vec3 gradientColor = mix(colorStart, colorEnd, gradientT);
+    
+    // Calculate position within the column (0 to 1 within the half)
+    float columnU;
+    if (columnPosition < 0.5) {
+      // Left column
+      columnU = vUv.x * 2.0; // Map 0-0.5 to 0-1
+    } else {
+      // Right column
+      columnU = (vUv.x - 0.5) * 2.0; // Map 0.5-1 to 0-1
+    }
+    
+    // Horizontal opacity fade within the column
+    float opacity;
+    if (fadeDirection > 0.0) {
+      // Fade from left to right within column
+      opacity = 1.0 - columnU;
+    } else {
+      // Fade from right to left within column
+      opacity = columnU;
+    }
+    
+    // Show gradient only in the specified column
+    float columnMask;
+    if (columnPosition < 0.5) {
+      // Left column - show on left half
+      columnMask = vUv.x < 0.5 ? 1.0 : 0.0;
+    } else {
+      // Right column - show on right half
+      columnMask = vUv.x >= 0.5 ? 1.0 : 0.0;
+    }
+    
+    // Mix gradient color with black based on opacity
+    vec3 finalColor = mix(vec3(0.0, 0.0, 0.0), gradientColor, opacity);
+    
+    // Apply column mask for visibility
+    float finalOpacity = columnMask;
+    gl_FragColor = vec4(finalColor, finalOpacity);
+  }
+`;
+
+// Shader for top/bottom solid colors with transparency fade
+const solidColorFadeShader = `
+  uniform vec3 colorLeft;
+  uniform vec3 colorRight;
+  uniform float fadeDirection; // 1.0 for bottom-to-top, -1.0 for top-to-bottom
+  uniform float isBottomFace; // 1.0 for bottom face, 0.0 for top face
+  
+  varying vec2 vUv;
+  
+  void main() {
+    // Adjust UV coordinates based on face
+    vec2 adjustedUV = vUv;
+    vec3 color;
+    
+    if (isBottomFace > 0.5) {
+      // Bottom face: rotate counterclockwise by 90 degrees
+      // Rotate: (x,y) -> (-y, x) which in UV space (0-1) is (1-y, x)
+      adjustedUV = vec2(1.0 - vUv.y, vUv.x);
+      // Flip colors as requested
+      color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+    } else {
+      // Top face: rotate 180 degrees and flip colors
+      adjustedUV = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+      // Flip colors as requested
+      color = adjustedUV.x < 0.5 ? colorRight : colorLeft;
+    }
+    
+    // Vertical opacity fade (only one row)
+    float opacity;
+    float rowHeight = 0.5; // Half height for one row (was 0.25, now 0.5)
+    
+    if (fadeDirection > 0.0) {
+      // Fade from bottom to top (for top face)
+      if (adjustedUV.y < (1.0 - rowHeight)) {
+        opacity = 0.0;
+      } else {
+        opacity = (adjustedUV.y - (1.0 - rowHeight)) / rowHeight;
+      }
+    } else {
+      // Fade from top to bottom (for bottom face)
+      if (adjustedUV.y > rowHeight) {
+        opacity = 0.0;
+      } else {
+        opacity = (rowHeight - adjustedUV.y) / rowHeight;
+      }
+    }
+    
+    // Mix color with black based on opacity
+    vec3 finalColor = mix(vec3(0.0, 0.0, 0.0), color, opacity);
+    
+    // Use full opacity for the visible parts (we're controlling the fade through color mixing)
+    float finalOpacity = opacity > 0.0 ? 1.0 : 0.0;
+    gl_FragColor = vec4(finalColor, finalOpacity);
+  }
+`;
+
 const CubeVertex = ({ position, label, isActive }) => {
   const meshRef = useRef();
   
@@ -264,6 +444,8 @@ const CubeEdge = ({ start, end }) => {
 
 // Component for each quadrant with its MBTI type label
 const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOrBottom }) => {
+  // Logging removed - comparison happens in click handler
+  
   return (
     <group position={position}>
       <Text
@@ -280,15 +462,17 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOr
   );
 };
 
-const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners, isTopOrBottom, isDragging }) => {
+const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners, isTopOrBottom, isDragging, adjacencyInfo }) => {
   const meshRef = useRef();
   const { camera } = useThree();
   const [isHovered, setIsHovered] = useState(false);
   
   const isActive = types.includes(selectedType) && !isTopOrBottom;
+  const hasAdjacencyEffect = adjacencyInfo && (adjacencyInfo.isAdjacent || adjacencyInfo.isTop || adjacencyInfo.isBottom);
   
   // Create gradient material for selected faces with correct uniforms
   const [gradientMaterial, setGradientMaterial] = useState(null);
+  const [adjacencyMaterial, setAdjacencyMaterial] = useState(null);
   
   // Create material with correct gradient positions based on selected type
   useEffect(() => {
@@ -301,7 +485,7 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         for (const [func, coord] of Object.entries(corners)) {
           if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
             vertexFunctionMap[idx] = func;
-            console.log(`  Vertex ${idx}: ${func} at position [${vert}]`);
+            // Removed vertex logging to reduce noise
             break;
           }
         }
@@ -341,29 +525,16 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       const gradientStart2 = functionPositions[1] !== undefined ? uvMap[functionPositions[1]] : [0, 1];
       const gradientEnd2 = functionPositions[2] !== undefined ? uvMap[functionPositions[2]] : [1, 0];
       
-      console.log(`Creating material for face [${types.join(',')}] with selected type: ${selectedType}`);
-      console.log(`  Stack: ${stack.join(' -> ')}`);
-      console.log(`  Vertex function map:`, vertexFunctionMap);
-      console.log(`  Function positions:`, functionPositions);
-      console.log(`  UV map:`, uvMap);
-      console.log(`  Vertex positions in 3D:`, vertices);
-      console.log(`  Dominant axis (${stack[0]} to ${stack[3]}):`);
-      console.log(`    ${stack[0]} at vertex ${functionPositions[0]} UV [${gradientStart1}]`);
-      console.log(`    ${stack[3]} at vertex ${functionPositions[3]} UV [${gradientEnd1}]`);
-      console.log(`    Direction: [${gradientEnd1[0] - gradientStart1[0]}, ${gradientEnd1[1] - gradientStart1[1]}]`);
-      console.log(`  Auxiliary axis (${stack[1]} to ${stack[2]}):`);
-      console.log(`    ${stack[1]} at vertex ${functionPositions[1]} UV [${gradientStart2}]`);
-      console.log(`    ${stack[2]} at vertex ${functionPositions[2]} UV [${gradientEnd2}]`);
-      console.log(`    Direction: [${gradientEnd2[0] - gradientStart2[0]}, ${gradientEnd2[1] - gradientStart2[1]}]`);
+      // Material creation details removed from logs
       
       // Calculate what we expect to see
       const expectedVisual = `${selectedType} should show: TOP=${stack[1]}->${stack[2]} (orange->cyan), BOTTOM=${stack[0]}->${stack[3]} (red->blue)`;
-      console.log(expectedVisual);
+      // Expected visual logging removed
       
       // Create a new material with the correct gradient positions
       // Add unique ID to track material instances
       const materialId = `${types.join(',')}-${selectedType}-${Date.now()}`;
-      console.log(`Creating material with ID: ${materialId}`);
+      // Material ID logging removed
       
       // Based on the logs, we need to swap gradients for certain types
       // The issue is that the function positions change, affecting which gradient goes where
@@ -377,7 +548,7 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       } else if (types.includes('INTP') || types.includes('ENTP')) {
         faceType = 3; // Face 4: Ne-Fe-Ti-Si
       }
-      console.log(`Face type for [${types.join(',')}]: ${faceType}`);
+      // Removed face type logging to reduce noise
       
       // Determine gradient colors based on the selected type
       let color1Start, color1End, color2Start, color2End;
@@ -555,6 +726,127 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       setGradientMaterial(null);
     }
   }, [isActive, isTopOrBottom, selectedType, types.join(','), vertices, corners, mbtiData]);
+  
+  // Create adjacency effect materials
+  useEffect(() => {
+    if (hasAdjacencyEffect && adjacencyInfo) {
+      if (adjacencyInfo.isAdjacent) {
+        // Side face with vertical gradient column
+        const selectedTypeConfig = getGradientColors(adjacencyInfo.selectedType);
+        if (!selectedTypeConfig) return;
+        
+        // Removed debug logging for adjacency materials
+        
+        // Determine which gradient to show based on relationship
+        let colorStart, colorEnd, fadeDirection, columnPosition, flipGradient;
+        
+        // Check face orientation - different faces may have different UV orientations
+        // Log which types are where to debug the issue
+        // Face types logging removed
+        
+        // Check if this is the Ne-Fe-Ti-Si face (contains ENTP, ISFJ) which needs gradient flip
+        const needsFlip = types.includes('ENTP') && types.includes('ISFJ');
+        flipGradient = needsFlip ? 1.0 : 0.0;
+        
+        // Check which face this is to determine correct column position
+        const isNiTeFiSeFace = types.includes('INTJ') && types.includes('ENTJ');
+        
+        if (adjacencyInfo.relationship === 'left') {
+          // This face is to the LEFT of the selected face
+          // It shares the LEFT edge of the selected face, which has the LEFT gradient (dominant/color1)
+          colorStart = selectedTypeConfig.color1Start;
+          colorEnd = selectedTypeConfig.color1End;
+          
+          // For Ni-Te-Fi-Se face, the shared edge is on the left (where INTJ/ENTJ are)
+          // So the gradient should appear on the LEFT column
+          if (isNiTeFiSeFace) {
+            fadeDirection = 1.0; // Fade left-to-right (100% at left, 0% at right)
+            columnPosition = 0.0; // Left column of this face
+            // Left adjacent gradient on left column
+          } else {
+            fadeDirection = -1.0; // Fade right-to-left (100% at right, 0% at left)
+            columnPosition = 1.0; // Right column of this face
+            // Left adjacent gradient on right column
+          }
+          // Gradient details removed from logs
+        } else {
+          // This face is to the RIGHT of the selected face
+          // It shares the RIGHT edge of the selected face, which has the RIGHT gradient (auxiliary/color2)
+          colorStart = selectedTypeConfig.color2Start;
+          colorEnd = selectedTypeConfig.color2End;
+          fadeDirection = 1.0; // Fade left-to-right (100% at left, 0% at right)
+          columnPosition = 0.0; // Left column of this face
+          // Right adjacent gradient details removed
+        }
+        
+        const material = new THREE.ShaderMaterial({
+          vertexShader: gradientVertexShader,
+          fragmentShader: adjacentVerticalShader,
+          uniforms: {
+            colorStart: { value: colorStart },
+            colorEnd: { value: colorEnd },
+            fadeDirection: { value: fadeDirection },
+            columnPosition: { value: columnPosition },
+            flipGradient: { value: flipGradient }
+          },
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+        
+        setAdjacencyMaterial(material);
+        
+        return () => {
+          material.dispose();
+        };
+      } else if (adjacencyInfo.isTop || adjacencyInfo.isBottom) {
+        // Top/bottom face with solid colors
+        const selectedTypeConfig = getGradientColors(adjacencyInfo.selectedType);
+        if (!selectedTypeConfig) return;
+        
+        let colorLeft, colorRight, fadeDirection, isBottomFace;
+        
+        if (adjacencyInfo.isTop) {
+          // Use start colors (top of gradients)
+          // For INFJ: Left gradient starts with Red, Right gradient starts with Orange
+          colorLeft = selectedTypeConfig.color1Start;  // Red
+          colorRight = selectedTypeConfig.color2Start; // Orange
+          fadeDirection = 1.0; // Fade bottom-to-top
+          isBottomFace = 0.0;
+        } else {
+          // Use end colors (bottom of gradients)
+          // For INFJ: Left gradient ends with Blue, Right gradient ends with Cyan
+          colorLeft = selectedTypeConfig.color1End;   // Blue
+          colorRight = selectedTypeConfig.color2End;  // Cyan
+          fadeDirection = -1.0; // Fade top-to-bottom
+          isBottomFace = 1.0;
+          // Bottom face color logging removed
+        }
+        
+        const material = new THREE.ShaderMaterial({
+          vertexShader: gradientVertexShader,
+          fragmentShader: solidColorFadeShader,
+          uniforms: {
+            colorLeft: { value: colorLeft },
+            colorRight: { value: colorRight },
+            fadeDirection: { value: fadeDirection },
+            isBottomFace: { value: isBottomFace }
+          },
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+        
+        setAdjacencyMaterial(material);
+        
+        return () => {
+          material.dispose();
+        };
+      }
+    } else {
+      setAdjacencyMaterial(null);
+    }
+  }, [hasAdjacencyEffect, adjacencyInfo]);
   
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -779,7 +1071,7 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     // Stop propagation to prevent multiple faces from processing the same click
     event.stopPropagation();
     
-    console.log(`Click on face with types: ${types.join(', ')}, isDragging=${isDragging}, isTopOrBottom=${isTopOrBottom}`);
+    // Removed verbose click log to reduce noise
     
     if (!isDragging && !isTopOrBottom) {
       // Get the click point in world space
@@ -842,9 +1134,8 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
         }
       }
       
-      console.log(`Clicked vertex ${clickedVertexIndex} (u=${u.toFixed(2)}, v=${v.toFixed(2)})`);
-      console.log(`  Function at vertex: ${clickedFunction}`);
-      console.log(`  Type with ${clickedFunction} dominant: ${clickedType}`);
+      // The types are now properly ordered by vertex position
+      console.log(`Click: vertex ${clickedVertexIndex} → ${clickedType}`);
       
       if (clickedType) {
         onTypeSelect(clickedType);
@@ -864,32 +1155,101 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     });
   }, [isTopOrBottom]);
 
-  // Choose which material to use
-  const material = isActive && gradientMaterial ? gradientMaterial : defaultMaterial;
+  // Choose which material to use for base mesh
+  const material = isActive && gradientMaterial ? gradientMaterial : 
+                   hasAdjacencyEffect && adjacencyMaterial ? adjacencyMaterial : 
+                   defaultMaterial;
 
   // Force material update by using a unique key that includes face info
   const faceId = types.join('-');
-  const meshKey = isActive ? `${faceId}-${selectedType}-active` : `${faceId}-inactive`;
+  const meshKey = isActive ? `${faceId}-${selectedType}-active` : 
+                  hasAdjacencyEffect ? `${faceId}-${selectedType}-adjacent` :
+                  `${faceId}-inactive`;
 
   return (
     <group>
-      <mesh 
-        key={meshKey}
-        ref={meshRef} 
-        geometry={geometry}
-        material={material}
-        onPointerUp={handlePointerUp}
-        onPointerOver={(e) => { 
-          if (!isTopOrBottom) {
-            document.body.style.cursor = 'pointer';
-            setIsHovered(true);
-          }
-        }}
-        onPointerOut={(e) => { 
-          document.body.style.cursor = 'auto';
-          setIsHovered(false);
-        }}
-      />
+      {/* Base mesh with black background - only for faces with adjacency effects */}
+      {hasAdjacencyEffect && (
+        <mesh 
+          key={`${meshKey}-base`}
+          ref={meshRef} 
+          geometry={geometry}
+          material={defaultMaterial}
+          renderOrder={0}
+          onPointerUp={handlePointerUp}
+          onPointerOver={(e) => { 
+            if (!isTopOrBottom) {
+              document.body.style.cursor = 'pointer';
+              setIsHovered(true);
+            }
+          }}
+          onPointerOut={(e) => { 
+            document.body.style.cursor = 'auto';
+            setIsHovered(false);
+          }}
+        />
+      )}
+      
+      {/* Main mesh for active gradients or adjacency effects */}
+      {(isActive || hasAdjacencyEffect) && (() => {
+        // Calculate face normal for offset to prevent z-fighting
+        const [v0, v1, v2] = vertices;
+        const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+        const edge2 = new THREE.Vector3(...v2).sub(new THREE.Vector3(...v0));
+        const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+        
+        // Ensure normal points outward from cube center
+        const faceCenter = vertices.reduce((acc, v) => 
+          acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
+        const faceCenterVec = new THREE.Vector3(...faceCenter);
+        if (normal.dot(faceCenterVec) < 0) {
+          normal.multiplyScalar(-1);
+        }
+        
+        const offset = hasAdjacencyEffect ? normal.multiplyScalar(0.001) : new THREE.Vector3(0, 0, 0);
+        
+        return (
+          <mesh 
+            key={meshKey}
+            geometry={geometry}
+            material={material}
+            renderOrder={1}
+            position={[offset.x, offset.y, offset.z]}
+            onPointerUp={handlePointerUp}
+            onPointerOver={(e) => { 
+              if (!isTopOrBottom) {
+                document.body.style.cursor = 'pointer';
+                setIsHovered(true);
+              }
+            }}
+            onPointerOut={(e) => { 
+              document.body.style.cursor = 'auto';
+              setIsHovered(false);
+            }}
+          />
+        );
+      })()}
+      
+      {/* Default mesh for inactive faces without effects */}
+      {!isActive && !hasAdjacencyEffect && (
+        <mesh 
+          key={`${meshKey}-default`}
+          ref={meshRef}
+          geometry={geometry}
+          material={defaultMaterial}
+          onPointerUp={handlePointerUp}
+          onPointerOver={(e) => { 
+            if (!isTopOrBottom) {
+              document.body.style.cursor = 'pointer';
+              setIsHovered(true);
+            }
+          }}
+          onPointerOut={(e) => { 
+            document.body.style.cursor = 'auto';
+            setIsHovered(false);
+          }}
+        />
+      )}
       
       {/* Function labels in center of each quadrant - only for side faces */}
       {!isTopOrBottom && vertices.map((vert, idx) => {
@@ -922,17 +1282,43 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       })}
       
       {/* Type labels for each quadrant - only for side faces */}
-      {!isTopOrBottom && types.map((type, idx) => (
-        <FaceQuadrant
-          key={type}
-          position={quadrantPositions[idx]}
-          type={type}
-          isSelected={type === selectedType}
-          onClick={onTypeSelect}
-          faceNormal={faceNormal}
-          isTopOrBottom={isTopOrBottom}
-        />
-      ))}
+      {!isTopOrBottom && (() => {
+        // Create an ordered types array where each type is at the vertex position 
+        // where its dominant function is located
+        const orderedTypes = [];
+        
+        // For each vertex, find which type has its dominant function there
+        vertices.forEach(vert => {
+          // Find the function at this vertex
+          let vertexFunction = null;
+          for (const [func, coord] of Object.entries(corners)) {
+            if (coord[0] === vert[0] && coord[1] === vert[1] && coord[2] === vert[2]) {
+              vertexFunction = func;
+              break;
+            }
+          }
+          
+          // Find which type has this function as dominant (position 0 in stack)
+          for (const type of types) {
+            if (mbtiData[type] && mbtiData[type][0] === vertexFunction) {
+              orderedTypes.push(type);
+              break;
+            }
+          }
+        });
+        
+        return orderedTypes.map((type, idx) => (
+          <FaceQuadrant
+            key={type}
+            position={quadrantPositions[idx]}
+            type={type}
+            isSelected={type === selectedType}
+            onClick={onTypeSelect}
+            faceNormal={faceNormal}
+            isTopOrBottom={isTopOrBottom}
+          />
+        ));
+      })()}
       
       {/* Function stack numbers (only when active) */}
       {isActive && selectedType && (() => {
@@ -1273,6 +1659,38 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
           const ys = new Set(vertices.map(v => v[1]));
           const isTopOrBottom = ys.size === 1;
           
+          // Determine if this face has adjacency effects
+          let adjacencyInfo = null;
+          if (!isActive) {
+            // Find which face is currently selected
+            const selectedFace = Object.entries(faces).find(([_, data]) => 
+              data.types && data.types.includes(selectedType)
+            );
+            
+            if (selectedFace) {
+              const [selectedQuadrant, selectedData] = selectedFace;
+              const adjacencyMap = getFaceAdjacency(selectedData.types, faces);
+              
+              // Check if current face is adjacent to selected face
+              if (adjacencyMap[quadrant]) {
+                adjacencyInfo = {
+                  ...adjacencyMap[quadrant],
+                  selectedType: selectedType,
+                  selectedFaceTypes: selectedData.types
+                };
+              } else if (isTopOrBottom) {
+                // Top/bottom faces should show gradient effects when any face is selected
+                const y = vertices[0][1]; // All vertices have same y for top/bottom
+                adjacencyInfo = {
+                  isTop: y > 0,
+                  isBottom: y < 0,
+                  selectedType: selectedType,
+                  selectedFaceTypes: selectedData.types
+                };
+              }
+            }
+          }
+          
           return (
             <React.Fragment key={quadrant}>
               <CubeFace
@@ -1285,6 +1703,7 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
                 corners={corners}
                 isTopOrBottom={isTopOrBottom}
                 isDragging={isDragging}
+                adjacencyInfo={adjacencyInfo}
               />
               <GridLines
                 face={vertices}
