@@ -33,36 +33,6 @@ const CubeEdge = ({ start, end }) => {
 
 // Component for each quadrant with its MBTI type label
 const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOrBottom }) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState(null);
-
-  const handlePointerDown = (e) => {
-    e.stopPropagation();
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setIsDragging(false);
-  };
-
-  const handlePointerMove = (e) => {
-    if (dragStart) {
-      const distance = Math.sqrt(
-        Math.pow(e.clientX - dragStart.x, 2) +
-        Math.pow(e.clientY - dragStart.y, 2)
-      );
-      if (distance > 5) {
-        setIsDragging(true);
-      }
-    }
-  };
-
-  const handlePointerUp = (e) => {
-    e.stopPropagation();
-    if (!isDragging && !isTopOrBottom) {
-      onClick(type);
-    }
-    setDragStart(null);
-    setIsDragging(false);
-  };
-
   return (
     <group position={position}>
       <Text
@@ -72,13 +42,6 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOr
         anchorY="middle"
         rotation={faceNormal}
         fontWeight={isSelected && !isTopOrBottom ? 'bold' : 'normal'}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerOver={(e) => { 
-          if (!isTopOrBottom) document.body.style.cursor = 'pointer'; 
-        }}
-        onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
       >
         {type}
       </Text>
@@ -86,10 +49,10 @@ const FaceQuadrant = ({ position, type, isSelected, onClick, faceNormal, isTopOr
   );
 };
 
-const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners, isTopOrBottom }) => {
+const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiData, corners, isTopOrBottom, isDragging }) => {
   const meshRef = useRef();
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState(null);
+  const { camera } = useThree();
+  const [isHovered, setIsHovered] = useState(false);
   
   const isActive = types.includes(selectedType) && !isTopOrBottom;
   
@@ -245,55 +208,86 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
     });
   }, [vertices, isActive]);
 
-  // Removed billboard effect - numbers now stay flat on face
-
-  // Handle pointer down to track drag start
-  const handlePointerDown = (event) => {
-    setDragStart({ x: event.clientX, y: event.clientY });
-    setIsDragging(false);
-  };
-
-  // Handle pointer move to detect dragging
-  const handlePointerMove = (event) => {
-    if (dragStart) {
-      const distance = Math.sqrt(
-        Math.pow(event.clientX - dragStart.x, 2) +
-        Math.pow(event.clientY - dragStart.y, 2)
-      );
-      if (distance > 5) { // Threshold for drag detection
-        setIsDragging(true);
-      }
+  // Check if face is visible to camera
+  const isFaceVisible = useMemo(() => {
+    if (!vertices || vertices.length < 3) return false;
+    
+    // Calculate face center
+    const faceCenter = vertices.reduce((acc, v) => 
+      acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / vertices.length);
+    
+    // Calculate face normal using first three vertices
+    // Vertices are ordered counter-clockwise when viewed from outside
+    const [v0, v1, v2, v3] = vertices;
+    const edge1 = new THREE.Vector3(...v1).sub(new THREE.Vector3(...v0));
+    const edge2 = new THREE.Vector3(...v3).sub(new THREE.Vector3(...v0));
+    let normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    // Ensure normal points outward from cube center (0,0,0)
+    const faceCenterVec = new THREE.Vector3(...faceCenter);
+    if (normal.dot(faceCenterVec) < 0) {
+      normal.multiplyScalar(-1);
     }
-  };
+    
+    // Check if face normal points toward camera
+    // Face is visible if the face normal points toward the camera
+    const cameraDirection = new THREE.Vector3().subVectors(camera.position, faceCenterVec).normalize();
+    const dotProduct = normal.dot(cameraDirection);
+    
+    // Only visible if facing camera (dot product > 0)
+    return dotProduct > 0.1; // Small threshold to avoid edge cases
+  }, [vertices, camera.position]);
 
   // Handle pointer up - only select if not dragging
   const handlePointerUp = (event) => {
+    // Stop propagation to prevent multiple faces from processing the same click
+    event.stopPropagation();
+    
+    console.log(`Click on face with types: ${types.join(', ')}, isDragging=${isDragging}, isTopOrBottom=${isTopOrBottom}`);
+    
     if (!isDragging && !isTopOrBottom) {
-      // Get click position relative to face
-      const point = event.point;
+      // Get the click point in world space
+      const clickPoint = event.point;
       
-      // Simple distance-based detection to nearest quadrant center
-      let minDist = Infinity;
-      let closestType = null;
+      // Calculate face center
+      const faceCenter = vertices.reduce((acc, v) => 
+        acc.map((c, i) => c + v[i]), [0, 0, 0]).map(c => c / 4);
       
-      quadrantPositions.forEach((pos, idx) => {
-        const dist = Math.sqrt(
-          Math.pow(point.x - pos[0], 2) +
-          Math.pow(point.y - pos[1], 2) +
-          Math.pow(point.z - pos[2], 2)
-        );
-        if (dist < minDist) {
-          minDist = dist;
-          closestType = types[idx];
-        }
-      });
+      // Create a 2D coordinate system on the face plane
+      // Use first two edges as basis vectors
+      const v0 = new THREE.Vector3(...vertices[0]);
+      const v1 = new THREE.Vector3(...vertices[1]);
+      const v3 = new THREE.Vector3(...vertices[3]);
       
-      if (closestType) {
-        onTypeSelect(closestType);
+      const edge1 = new THREE.Vector3().subVectors(v1, v0);
+      const edge2 = new THREE.Vector3().subVectors(v3, v0);
+      
+      // Project click point onto face coordinate system
+      const clickVec = new THREE.Vector3().subVectors(new THREE.Vector3(...clickPoint), v0);
+      const u = clickVec.dot(edge1) / edge1.lengthSq();
+      const v = clickVec.dot(edge2) / edge2.lengthSq();
+      
+      // Determine which quadrant was clicked based on u,v coordinates
+      // u < 0.5 = left, u >= 0.5 = right
+      // v < 0.5 = bottom, v >= 0.5 = top
+      let quadrantIndex;
+      if (u < 0.5 && v < 0.5) {
+        quadrantIndex = 0; // bottom-left
+      } else if (u >= 0.5 && v < 0.5) {
+        quadrantIndex = 1; // bottom-right
+      } else if (u >= 0.5 && v >= 0.5) {
+        quadrantIndex = 2; // top-right
+      } else {
+        quadrantIndex = 3; // top-left
+      }
+      
+      const selectedType = types[quadrantIndex];
+      console.log(`Clicked quadrant ${quadrantIndex}, u=${u.toFixed(2)}, v=${v.toFixed(2)}, selecting type: ${selectedType}`);
+      
+      if (selectedType) {
+        onTypeSelect(selectedType);
       }
     }
-    setDragStart(null);
-    setIsDragging(false);
   };
 
   return (
@@ -301,19 +295,23 @@ const CubeFace = ({ vertices, quadrant, types, selectedType, onTypeSelect, mbtiD
       <mesh 
         ref={meshRef} 
         geometry={geometry}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerOver={(e) => { 
-          if (!isTopOrBottom) document.body.style.cursor = 'pointer'; 
+          if (!isTopOrBottom) {
+            document.body.style.cursor = 'pointer';
+            setIsHovered(true);
+          }
         }}
-        onPointerOut={(e) => { document.body.style.cursor = 'auto'; }}
+        onPointerOut={(e) => { 
+          document.body.style.cursor = 'auto';
+          setIsHovered(false);
+        }}
       >
         <meshStandardMaterial
           color={isTopOrBottom ? '#2a2a2a' : (isActive ? '#ff8800' : '#3a3a3a')}
           opacity={1.0}
           transparent={false}
-          side={THREE.DoubleSide}
+          side={THREE.FrontSide}
           depthWrite={true}
           depthTest={true}
         />
@@ -451,6 +449,8 @@ const GridLines = ({ face, isActive }) => {
 const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadrant, getActiveFunctions }) => {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
   
   useFrame((state, delta) => {
     if (groupRef.current && autoRotate) {
@@ -578,14 +578,18 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
     };
     
     // Based on our test, here are the correct ordered mappings
+    // For faces that need reversed winding, we reverse the vertices AND adjust the type mapping
+    const niFeTiSeVerts = orderFaceVertices(['Ni', 'Fe', 'Ti', 'Se']);
+    const niTeFiSeVerts = orderFaceVertices(['Ni', 'Te', 'Fi', 'Se']);
+    
     const quadrantFaces = {
       'Ni-Fe-Ti-Se': {
-        vertices: orderFaceVertices(['Ni', 'Fe', 'Ti', 'Se']),
-        types: ['ESTP', 'INFJ', 'ENFJ', 'ISTP'] // Se, Ni, Fe, Ti order
+        vertices: [...niFeTiSeVerts].reverse(), // Reverse winding order for correct face normal
+        types: ['ISTP', 'ENFJ', 'INFJ', 'ESTP'] // Types in reversed vertex order
       },
       'Ni-Te-Fi-Se': {
-        vertices: orderFaceVertices(['Ni', 'Te', 'Fi', 'Se']),
-        types: ['ESFP', 'ISFP', 'ENTJ', 'INTJ'] // Se, Fi, Te, Ni order
+        vertices: [...niTeFiSeVerts].reverse(), // Reverse winding order for correct face normal
+        types: ['INTJ', 'ENTJ', 'ISFP', 'ESFP'] // Types in reversed vertex order
       },
       'Ne-Te-Fi-Si': {
         vertices: orderFaceVertices(['Ne', 'Te', 'Fi', 'Si']),
@@ -599,10 +603,10 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
       'top': {
         vertices: [
           corners['Ni'], // [-1.5, 1.5, -1.5]
-          corners['Te'], // [1.5, 1.5, -1.5]
+          corners['Fe'], // [-1.5, 1.5, 1.5]
           corners['Si'], // [1.5, 1.5, 1.5]
-          corners['Fe']  // [-1.5, 1.5, 1.5]
-        ],
+          corners['Te']  // [1.5, 1.5, -1.5]
+        ], // Counter-clockwise when viewed from above
         types: [] // No types on top/bottom
       },
       // Bottom face (Y = -1.5) - Functions with Y = -1.5: Se, Ti, Fi, Ne
@@ -625,12 +629,50 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
   );
   
   const handleTypeSelect = (type) => {
-    setSelectedType(type);
-    setAutoRotate(false);
+    // Only select if not dragging
+    if (!isDragging) {
+      setSelectedType(type);
+      setAutoRotate(false);
+    }
+  };
+  
+  // Global pointer handlers for drag detection
+  const handlePointerDown = (e) => {
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setIsDragging(false);
+  };
+  
+  const handlePointerMove = (e) => {
+    if (dragStart) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - dragStart.x, 2) +
+        Math.pow(e.clientY - dragStart.y, 2)
+      );
+      if (distance > 5) {
+        setIsDragging(true);
+      }
+    }
+  };
+  
+  const handlePointerUp = () => {
+    setDragStart(null);
+    // Only reset dragging if we didn't actually drag
+    if (!isDragging) {
+      setIsDragging(false);
+    } else {
+      // Reset drag state after a frame to prevent immediate re-selection
+      requestAnimationFrame(() => {
+        setIsDragging(false);
+      });
+    }
   };
   
   return (
-    <>
+    <group 
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
       <ambientLight intensity={0.7} />
       <pointLight position={[10, 10, 10]} intensity={0.8} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -656,6 +698,12 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
         {Object.entries(faces).map(([quadrant, { vertices, types }]) => {
           const isActive = types.includes(selectedType);
           
+          // Skip faces with no vertices (shouldn't happen but let's check)
+          if (!vertices || vertices.length === 0) {
+            console.warn(`Face ${quadrant} has no vertices!`);
+            return null;
+          }
+          
           // Check if this is a top or bottom face (constant Y coordinate)
           const ys = new Set(vertices.map(v => v[1]));
           const isTopOrBottom = ys.size === 1;
@@ -671,6 +719,7 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
                 mbtiData={mbtiData}
                 corners={corners}
                 isTopOrBottom={isTopOrBottom}
+                isDragging={isDragging}
               />
               <GridLines
                 face={vertices}
@@ -689,7 +738,7 @@ const HypercubeScene = ({ selectedType, setSelectedType, mbtiData, typeToQuadran
         maxDistance={10}
         onStart={() => setAutoRotate(false)}
       />
-    </>
+    </group>
   );
 };
 
