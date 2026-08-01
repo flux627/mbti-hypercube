@@ -1,19 +1,4 @@
-export const coords = [
-  [-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1],
-  [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1]
-];
-
-export const cubeEdges = [
-  [0, 1], [0, 2], [0, 4], [1, 3], [1, 5],
-  [2, 3], [2, 6], [3, 7], [4, 5], [4, 6],
-  [5, 7], [6, 7]
-];
-
-export const functions = ["Ni", "Se", "Fe", "Ti", "Te", "Fi", "Si", "Ne"];
-
-export const funcToIdx = {};
-functions.forEach((fn, i) => funcToIdx[fn] = i);
-
+// Function stacks in order: Dominant, Auxiliary, Tertiary, Inferior.
 export const typeStacks = {
   "INFJ": ["Ni", "Fe", "Ti", "Se"],
   "ENFJ": ["Fe", "Ni", "Se", "Ti"],
@@ -33,22 +18,10 @@ export const typeStacks = {
   "ESFJ": ["Fe", "Si", "Ne", "Ti"]
 };
 
+// Types grouped by shared function set — one group per cube face.
 export const groups = [
   { label: 'Functions: {Ni, Fe, Ti, Se}', types: ['INFJ', 'ENFJ', 'ISTP', 'ESTP'] },
   { label: 'Functions: {Ni, Te, Fi, Se}', types: ['INTJ', 'ENTJ', 'ISFP', 'ESFP'] },
   { label: 'Functions: {Fi, Ne, Si, Te}', types: ['INFP', 'ENFP', 'ISTJ', 'ESTJ'] },
   { label: 'Functions: {Ti, Ne, Si, Fe}', types: ['INTP', 'ENTP', 'ISFJ', 'ESFJ'] },
 ];
-
-export const mbtiData = typeStacks;
-
-export const typeToQuadrant = {
-  'INFJ': 'Ni-Fe-Ti-Se', 'ENFJ': 'Ni-Fe-Ti-Se', 'ISTP': 'Ni-Fe-Ti-Se', 'ESTP': 'Ni-Fe-Ti-Se',
-  'INTJ': 'Ni-Te-Fi-Se', 'ENTJ': 'Ni-Te-Fi-Se', 'ISFP': 'Ni-Te-Fi-Se', 'ESFP': 'Ni-Te-Fi-Se',
-  'INFP': 'Ne-Te-Fi-Si', 'ENFP': 'Ne-Te-Fi-Si', 'ISTJ': 'Ne-Te-Fi-Si', 'ESTJ': 'Ne-Te-Fi-Si',
-  'INTP': 'Ne-Fe-Ti-Si', 'ENTP': 'Ne-Fe-Ti-Si', 'ISFJ': 'Ne-Fe-Ti-Si', 'ESFJ': 'Ne-Fe-Ti-Si'
-};
-
-export const getActiveFunctions = (type) => {
-  return typeStacks[type] || [];
-};
