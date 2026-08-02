@@ -7,7 +7,10 @@ import './App.css';
 // View state can be seeded from the URL: ?type=ENTP&yaw=45&spin=0&cam=5,-5,5
 const params = new URLSearchParams(window.location.search);
 const initialType = TYPE_STACKS[params.get('type')] ? params.get('type') : 'INFJ';
-const initialYaw = (Number(params.get('yaw')) || 0) * (Math.PI / 180);
+// yaw absent → the cube snaps to the selected type's home pose instead
+const initialYaw = params.has('yaw')
+  ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
+  : null;
 const initialSpin = params.get('spin') !== '0';
 const camParam = (params.get('cam') || '').split(',').map(Number);
 const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)

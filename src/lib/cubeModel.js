@@ -50,6 +50,50 @@ export const CUBE_EDGES = [
   ['Fi', 'Ne'], ['Si', 'Ne'],
 ];
 
+// The canonical viewing pose for a type: its face fronting the viewer with
+// the stack laid out as the standard grid — dominant top-left, auxiliary
+// top-right, tertiary bottom-right, inferior bottom-left. The dominant–
+// inferior edge must land on the left, the auxiliary–tertiary edge on the
+// right; for half the types the rest layout has the opposite chirality, so
+// no rotation can achieve this and the cube must MIRROR (parity −1).
+//
+// Returns rest-space unit vectors describing the (possibly improper)
+// transform: `up` maps to world-up, `right` to screen-right, `normal` to the
+// viewer; `parity` is the transform's determinant (+1 pure rotation, −1
+// requires a reflection).
+export function homeOrientation(type) {
+  const stack = TYPE_STACKS[type];
+  const face = FACES.find(f =>
+    f.isSide && Object.values(f.corners).every(fn => stack.includes(fn)));
+
+  // Offsets of the dominant/inferior corners from the face center (= normal
+  // on the unit cube). Their difference is the vertical dom→inf edge; their
+  // midpoint tells which side of the face that edge sits on at rest.
+  const n = face.normal;
+  const off = fn => CORNERS[fn].map((v, i) => v - n[i]);
+  const o1 = off(stack[0]);
+  const o4 = off(stack[3]);
+
+  // up: rest direction that must map to world-up (dominant above inferior)
+  const sigma = Math.sign(o1[1] - o4[1]);
+  const up = [0, sigma, 0];
+
+  // right: rest direction that must map to screen-right (the dom–inf edge —
+  // at the horizontal offset (o1+o4)/2 — must land on the LEFT)
+  const right = [-(o1[0] + o4[0]) / 2, 0, -(o1[2] + o4[2]) / 2];
+
+  // parity: determinant of the orthonormal frame [right, up, normal]
+  return { faceKey: face.key, normal: n, up, right, parity: detSign(right, up, n) };
+}
+
+function detSign(a, b, c) {
+  return Math.sign(
+    a[0] * (b[1] * c[2] - b[2] * c[1]) -
+    a[1] * (b[0] * c[2] - b[2] * c[0]) +
+    a[2] * (b[0] * c[1] - b[1] * c[0]),
+  );
+}
+
 // The type sitting at a given corner of a face: the one whose dominant
 // function is that corner and whose whole stack lives on the face.
 export function typeAtCorner(face, cornerKey) {

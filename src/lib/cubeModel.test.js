@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   CORNERS, FACES, CORNER_UVS, TYPE_STACKS, RANK_COLORS,
-  faceOverlay, typeAtCorner,
+  faceOverlay, typeAtCorner, homeOrientation,
 } from './cubeModel.js';
 
 const types = Object.keys(TYPE_STACKS);
@@ -112,5 +112,40 @@ for (const t of types) {
   assert.deepEqual(zp.origin, [0, 0]);
   assert.deepEqual(zp.perp, [1, 0]);
 }
+
+// ── Home orientations ───────────────────────────────────────────────────────
+// The home pose must lay out every stack as the canonical grid: dominant
+// top-left, auxiliary top-right, tertiary bottom-right, inferior bottom-left.
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + 0; // +0 folds -0
+let mirrored = 0;
+for (const t of types) {
+  const { faceKey, normal, up, right, parity } = homeOrientation(t);
+  const face = FACES.find(f => f.key === faceKey);
+  assert.ok(face.isSide, `${t} home face is a side face`);
+  for (const v of [up, right]) assert.equal(Math.hypot(...v), 1, `${t} unit vectors`);
+  assert.equal(dot(up, normal), 0, `${t} up ⟂ normal`);
+  assert.equal(dot(right, normal), 0, `${t} right ⟂ normal`);
+  assert.equal(dot(right, up), 0, `${t} right ⟂ up`);
+  assert.ok(parity === 1 || parity === -1, `${t} parity is ±1`);
+  if (parity === -1) mirrored++;
+
+  // corner positions under the pose, in (screen-x, screen-y) coordinates
+  const stack = TYPE_STACKS[t];
+  const pos = fn => {
+    const off = CORNERS[fn].map((v, i) => v - normal[i]);
+    return [dot(off, right), dot(off, up)];
+  };
+  assert.deepEqual(pos(stack[0]), [-1, 1], `${t} dominant top-left`);
+  assert.deepEqual(pos(stack[1]), [1, 1], `${t} auxiliary top-right`);
+  assert.deepEqual(pos(stack[2]), [1, -1], `${t} tertiary bottom-right`);
+  assert.deepEqual(pos(stack[3]), [-1, -1], `${t} inferior bottom-left`);
+}
+// Exactly half the types are chirally flipped relative to their face.
+assert.equal(mirrored, 8, 'eight types need the mirror');
+// The user-visible pair: ENTP reaches the grid by rotation, INTP needs the flip.
+assert.equal(homeOrientation('ENTP').parity, 1);
+assert.equal(homeOrientation('INTP').parity, -1);
+assert.equal(homeOrientation('INFJ').parity, 1);
+assert.equal(homeOrientation('ENFJ').parity, -1);
 
 console.log('cubeModel: all tests passed');

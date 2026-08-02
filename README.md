@@ -29,6 +29,16 @@ neighboring faces, fading out: side neighbors continue the gradient columns,
 the top and bottom faces continue the columns' end colors. All of it is
 computed from the corner ranks; there is no per-type configuration anywhere.
 
+Selecting a type also glides the cube to that type's **home pose**: its face
+fronting the camera with the stack laid out as the standard grid — dominant
+top-left, auxiliary top-right, tertiary bottom-right, inferior bottom-left.
+Here the cube's chirality becomes visible: for eight of the sixteen types the
+grid layout is the *mirror image* of their face's rest arrangement, so no
+rotation can reach it — the cube flattens through its own face plane and
+re-emerges reflected (INTP↔ENTP is such a pair: Ne top-left for ENTP,
+top-right for INTP). Labels re-orient every frame, so they stay upright and
+un-mirrored throughout.
+
 ## Using it
 
 ```bash
@@ -38,24 +48,30 @@ npm test         # pure-model unit tests (node, no framework)
 npm run build    # production bundle in dist/
 ```
 
-- **Dropdown** or **click a face quadrant** to select a type.
+- **Dropdown** or **click a face quadrant** to select a type — the cube
+  animates to that type's home pose (flipping through the mirror when needed).
 - **Drag** to orbit (auto-rotation stops on first interaction), scroll to zoom.
 - URL parameters make any view linkable and screenshot-testable:
-  `?type=ENTP&yaw=45&spin=0&cam=5,-5,5`
-  — initial type, initial cube yaw in degrees, disable auto-rotation, and
-  camera position.
+  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45`
+  — initial type (the cube starts in its home pose), disable auto-rotation,
+  camera position, and an explicit cube yaw in degrees (overrides the home
+  pose; useful for framing the rest orientation).
 
 ## Architecture
 
 - `src/data/mbtiData.js` — the 16 stacks and the four function-set groups.
 - `src/lib/cubeModel.js` — pure model, no three.js: corner layout, the six
-  faces with canonical UV frames, and `faceOverlay(face, type)`, which reduces
+  faces with canonical UV frames, `faceOverlay(face, type)`, which reduces
   everything drawn to one rule (corner colors from stack ranks; a face shows a
   full two-column gradient if it holds all 4 stack functions, an edge bleed if
-  it holds 2, nothing if 0).
+  it holds 2, nothing if 0), and `homeOrientation(type)`, the possibly-improper
+  frame of the home pose with its `parity`.
 - `src/lib/cubeModel.test.js` — asserts the geometric invariants the
   visualization relies on (vertical dom–inf edges, type placement, overlay
-  counts, reference colors).
+  counts, reference colors, canonical home-pose layout, the 8/8 parity split).
 - `src/components/ThreeHypercube.jsx` — react-three-fiber scene: face meshes,
-  two small shaders (full-face columns, edge bleed), labels, and interaction.
+  two small shaders (full-face columns, edge bleed), interaction, and the pose
+  system — the group's transform is rotation ∘ cube-local mirror, animated by
+  slerping the rotation while the mirror's scale component crosses zero, with
+  labels re-based to world-upright matrices each frame.
 - `src/components/TypeSelector.jsx`, `src/App.jsx` — UI shell and legend.

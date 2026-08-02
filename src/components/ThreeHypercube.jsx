@@ -1,12 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  CORNERS, FACES, CUBE_EDGES, faceOverlay, typeAtCorner,
+  CORNERS, FACES, CUBE_EDGES, faceOverlay, typeAtCorner, homeOrientation,
 } from '../lib/cubeModel.js';
 
 const SCALE = 1.5;
+const UP = new THREE.Vector3(0, 1, 0);
+// S_x · S_z — re-expresses a cube-local mirror from one axis onto the other.
+const FLIP_XZ = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
+const ANIM_SECONDS = 1.1;
+const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -44,6 +49,79 @@ const bleedFragmentShader = /* glsl */ `
   }
 `;
 
+// The world pose that shows `type` canonically (dominant top-left, stack as
+// the standard grid), fronting the camera's current horizontal direction.
+// Expressed as rotation ∘ cube-local mirror: { q, sign, axis } where the
+// group's scale carries `sign` (±1) on `axis`.
+function homePose(type, camera) {
+  const { normal, up, right, parity } = homeOrientation(type);
+  const h = new THREE.Vector3(camera.position.x, 0, camera.position.z);
+  if (h.lengthSq() < 1e-6) h.set(1, 0, 1);
+  h.normalize();
+  const rho = new THREE.Vector3().crossVectors(UP, h); // screen-right
+
+  const m = new THREE.Matrix4()
+    .makeBasis(rho, UP, h)
+    .multiply(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(...right), new THREE.Vector3(...up), new THREE.Vector3(...normal),
+    ).transpose());
+
+  const axis = normal[0] !== 0 ? 'x' : 'z';
+  if (parity === -1) {
+    // fold the reflection into a cube-local mirror across the face plane,
+    // leaving a proper rotation: q = M · S_axis
+    m.scale(axis === 'x' ? new THREE.Vector3(-1, 1, 1) : new THREE.Vector3(1, 1, -1));
+  }
+  return { q: new THREE.Quaternion().setFromRotationMatrix(m), sign: parity, axis };
+}
+
+const mirrorScale = (axis, sign) =>
+  axis === 'x' ? new THREE.Vector3(sign, 1, 1) : new THREE.Vector3(1, 1, sign);
+
+// Text that lies in its face's plane but is re-oriented every frame to stay
+// world-upright — and, because its world matrix is rebuilt from an orthonormal
+// basis, never mirror-imaged even while the cube's transform is improper.
+const _pos = new THREE.Vector3();
+const _n = new THREE.Vector3();
+const _u = new THREE.Vector3();
+const _r = new THREE.Vector3();
+const _world = new THREE.Matrix4();
+const _inv = new THREE.Matrix4();
+const _nrm = new THREE.Matrix3();
+
+const _toCam = new THREE.Vector3();
+
+function FaceLabel({ groupRef, position, normal, children, ...textProps }) {
+  const ref = useRef();
+  useFrame(({ camera }) => {
+    const g = groupRef.current;
+    const o = ref.current;
+    if (!g || !o) return;
+    const s = g.scale;
+    // cube nearly flat mid-flip, or face nearly horizontal: keep last pose
+    if (Math.min(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) < 0.04) return;
+    g.updateMatrixWorld();
+    _pos.copy(position).applyMatrix4(g.matrixWorld);
+    _n.copy(normal).applyMatrix3(_nrm.getNormalMatrix(g.matrixWorld)).normalize();
+    // hide labels on faces turned away from the camera — depth occlusion
+    // handles this in normal poses, but not while the cube is flattened
+    _toCam.copy(camera.position).sub(_pos).normalize();
+    o.visible = _n.dot(_toCam) > 0.05;
+    if (!o.visible) return;
+    const d = UP.dot(_n);
+    if (Math.abs(d) > 0.995) return;
+    _u.copy(UP).addScaledVector(_n, -d).normalize();
+    _r.crossVectors(_u, _n);
+    _world.makeBasis(_r, _u, _n).setPosition(_pos);
+    o.matrix.multiplyMatrices(_inv.copy(g.matrixWorld).invert(), _world);
+  });
+  return (
+    <Text ref={ref} matrixAutoUpdate={false} {...textProps}>
+      {children}
+    </Text>
+  );
+}
+
 // Per-face constants derived from the model's canonical UV frame.
 function useFaceFrame(face) {
   return useMemo(() => {
@@ -51,12 +129,6 @@ function useFaceFrame(face) {
     const c00 = p('c00'), c10 = p('c10'), c01 = p('c01'), c11 = p('c11');
     const normal = new THREE.Vector3(...face.normal);
     const center = new THREE.Vector3().addVectors(c00, c11).multiplyScalar(0.5);
-
-    const right = new THREE.Vector3().subVectors(c10, c00).normalize();
-    const up = new THREE.Vector3().subVectors(c01, c00).normalize();
-    const rotation = new THREE.Euler().setFromRotationMatrix(
-      new THREE.Matrix4().makeBasis(right, up, normal),
-    );
 
     const geometry = new THREE.BufferGeometry();
     const tri = (a, b, c) => [...a.toArray(), ...b.toArray(), ...c.toArray()];
@@ -68,7 +140,7 @@ function useFaceFrame(face) {
     ]), 2));
     geometry.computeVertexNormals();
 
-    return { corners: { c00, c10, c01, c11 }, normal, center, rotation, geometry };
+    return { corners: { c00, c10, c01, c11 }, normal, center, geometry };
   }, [face]);
 }
 
@@ -79,12 +151,13 @@ const towardCorner = (frame, corner, fraction, lift) =>
     .lerpVectors(frame.center, corner, fraction)
     .addScaledVector(frame.normal, lift);
 
-function CubeFace({ face, selectedType, onSelect, draggingRef }) {
+function CubeFace({ face, selectedType, onSelect, draggingRef, groupRef }) {
   const frame = useFaceFrame(face);
   const overlay = useMemo(() => faceOverlay(face, selectedType), [face, selectedType]);
 
   const baseMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     color: face.isSide ? '#3a3a3a' : '#2a2a2a',
+    side: THREE.DoubleSide,
   }), [face.isSide]);
 
   const fullMaterial = useMemo(() => new THREE.ShaderMaterial({
@@ -94,6 +167,7 @@ function CubeFace({ face, selectedType, onSelect, draggingRef }) {
       c00: { value: new THREE.Color() }, c10: { value: new THREE.Color() },
       c01: { value: new THREE.Color() }, c11: { value: new THREE.Color() },
     },
+    side: THREE.DoubleSide,
   }), []);
 
   const bleedMaterial = useMemo(() => new THREE.ShaderMaterial({
@@ -106,6 +180,7 @@ function CubeFace({ face, selectedType, onSelect, draggingRef }) {
     },
     transparent: true,
     depthWrite: false,
+    side: THREE.DoubleSide,
   }), []);
 
   useEffect(() => () => {
@@ -179,6 +254,7 @@ function CubeFace({ face, selectedType, onSelect, draggingRef }) {
           points={pts}
           color={isSelectedFace ? '#ff69b4' : '#ffffff'}
           lineWidth={1}
+          side={THREE.DoubleSide}
         />
       ))}
 
@@ -187,45 +263,48 @@ function CubeFace({ face, selectedType, onSelect, draggingRef }) {
         const type = typeAtCorner(face, key);
         return (
           <group key={key}>
-            <Text
+            <FaceLabel
+              groupRef={groupRef}
               position={towardCorner(frame, corner, 0.5, 0.02)}
+              normal={frame.normal}
               fontSize={0.36}
               color="#cccccc"
               anchorX="center"
               anchorY="middle"
-              rotation={frame.rotation}
               outlineWidth={0.02}
               outlineColor="black"
             >
               {fn}
-            </Text>
+            </FaceLabel>
             {type && (
-              <Text
+              <FaceLabel
+                groupRef={groupRef}
                 position={towardCorner(frame, corner, 0.8, 0.02)}
+                normal={frame.normal}
                 fontSize={0.15}
                 color={type === selectedType ? 'white' : '#999999'}
                 anchorX="center"
                 anchorY="middle"
-                rotation={frame.rotation}
                 outlineWidth={0.01}
                 outlineColor="black"
               >
                 {type}
-              </Text>
+              </FaceLabel>
             )}
             {isSelectedFace && (
-              <Text
+              <FaceLabel
+                groupRef={groupRef}
                 position={towardCorner(frame, corner, 0.2, 0.02)}
+                normal={frame.normal}
                 fontSize={0.225}
                 color="white"
                 anchorX="center"
                 anchorY="middle"
-                rotation={frame.rotation}
                 outlineWidth={0.02}
                 outlineColor="black"
               >
                 {String(overlay.ranks[key])}
-              </Text>
+              </FaceLabel>
             )}
           </group>
         );
@@ -238,7 +317,49 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
   const draggingRef = useRef(false);
-  const { gl } = useThree();
+  const poseAxisRef = useRef('x'); // cube-local axis any mirror currently lives on
+  const animRef = useRef(null);
+  const mountedRef = useRef(false);
+  const { gl, camera } = useThree();
+
+  // Initial pose: explicit yaw if given, else snap to the selected type's home.
+  useLayoutEffect(() => {
+    const g = groupRef.current;
+    if (initialYaw !== null) {
+      g.quaternion.setFromAxisAngle(UP, initialYaw);
+    } else {
+      const { q, sign, axis } = homePose(selectedType, camera);
+      g.quaternion.copy(q);
+      g.scale.copy(mirrorScale(axis, sign));
+      poseAxisRef.current = axis;
+    }
+  }, []);
+
+  // Selection → glide (and, when chirality differs, flip) to the home pose.
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    const g = groupRef.current;
+    const target = homePose(selectedType, camera);
+    const fromQ = g.quaternion.clone();
+    const fromScale = g.scale.clone();
+
+    let axis = target.sign === -1 ? target.axis : poseAxisRef.current;
+    if (axis !== poseAxisRef.current) {
+      const curSign = poseAxisRef.current === 'x' ? g.scale.x : g.scale.z;
+      if (curSign === -1) {
+        // same world transform, mirror re-expressed on the new axis
+        fromQ.multiply(FLIP_XZ);
+        fromScale.copy(mirrorScale(axis, -1));
+      }
+      // mid-flip cross-axis retargets fall through to a plain component lerp
+    }
+    poseAxisRef.current = axis;
+    animRef.current = {
+      fromQ, toQ: target.q,
+      fromScale, toScale: mirrorScale(axis, target.sign),
+      t: 0,
+    };
+  }, [selectedType, camera]);
 
   // Drag detection on the canvas itself, so orbiting never triggers a select.
   useEffect(() => {
@@ -264,8 +385,20 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
     };
   }, [gl]);
 
+  const spinQ = useMemo(() => new THREE.Quaternion(), []);
   useFrame((_, delta) => {
-    if (groupRef.current && autoRotate) groupRef.current.rotation.y += delta * 0.2;
+    const g = groupRef.current;
+    if (!g) return;
+    const anim = animRef.current;
+    if (anim) {
+      anim.t = Math.min(1, anim.t + delta / ANIM_SECONDS);
+      const e = easeInOut(anim.t);
+      g.quaternion.slerpQuaternions(anim.fromQ, anim.toQ, e);
+      g.scale.lerpVectors(anim.fromScale, anim.toScale, e);
+      if (anim.t >= 1) animRef.current = null;
+    } else if (autoRotate) {
+      g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * 0.2));
+    }
   });
 
   const handleSelect = (type) => {
@@ -279,7 +412,7 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
       <pointLight position={[10, 10, 10]} intensity={0.8} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
 
-      <group ref={groupRef} rotation={[0, initialYaw, 0]}>
+      <group ref={groupRef}>
         {CUBE_EDGES.map(([a, b]) => (
           <Line
             key={`${a}-${b}`}
@@ -289,6 +422,7 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
             ]}
             color="#666666"
             lineWidth={2}
+            side={THREE.DoubleSide}
           />
         ))}
 
@@ -299,6 +433,7 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
             selectedType={selectedType}
             onSelect={handleSelect}
             draggingRef={draggingRef}
+            groupRef={groupRef}
           />
         ))}
       </group>
@@ -316,7 +451,7 @@ function HypercubeScene({ selectedType, setSelectedType, initialYaw, spin }) {
 }
 
 export default function ThreeHypercube({
-  selectedType, setSelectedType, initialYaw = 0, spin = true, cameraPosition = [5, 5, 5],
+  selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
