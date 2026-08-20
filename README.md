@@ -29,10 +29,10 @@ sharpness (2 = ellipsoid, higher → a sharp box) and opens grooves between
 neighboring poles that make the columns read as units; it's locked at
 n = 7 (override via `?n=`).
 
-Every corner label shows its function with the selected type's rank as a
-subscript, on all six faces: the stack 1–4, and the attitude-flipped shadow
-functions 5–8 — which sit at the antipodal corners. Type badges appear on a
-quadrant when hovered; only the selected type's badge stays visible.
+Every quadrant on the side faces labels its function with the selected
+type's rank as a subscript: the stack 1–4, and the attitude-flipped shadow
+functions 5–8 — which sit at the antipodal corners. Type badges fade in on
+a hovered quadrant; only the selected type's badge stays visible.
 
 Selecting a type paints its face by stack rank at each corner —
 <span>1&nbsp;dominant&nbsp;red, 2&nbsp;auxiliary&nbsp;orange,

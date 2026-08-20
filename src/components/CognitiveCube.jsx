@@ -123,31 +123,33 @@ const _toCam = new THREE.Vector3();
 
 function SurfaceLabel({ groupRef, position, normal, visible = true, children }) {
   const ref = useRef();
-  useFrame(({ camera }) => {
+  const fadeRef = useRef(visible ? 1 : 0);
+  useFrame(({ camera }, delta) => {
     const g = groupRef.current;
     const o = ref.current;
     if (!g || !o) return;
     const s = g.scale;
     // cube nearly flat mid-flip: keep last pose
     if (Math.min(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) < 0.04) return;
+    // visibility fades in and out rather than popping
+    const target = visible ? 1 : 0;
+    const f = fadeRef.current + (target - fadeRef.current) * Math.min(1, delta * 10);
+    fadeRef.current = Math.abs(f - target) < 0.005 ? target : f;
     g.updateMatrixWorld();
     _pos.copy(position).applyMatrix4(g.matrixWorld);
     _n.copy(normal).applyMatrix3(_nrm.getNormalMatrix(g.matrixWorld)).normalize();
     // hide labels on faces turned away from the camera — depth occlusion
     // handles this in normal poses, but not while the cube is flattened
     _toCam.copy(camera.position).sub(_pos).normalize();
-    o.visible = visible && _n.dot(_toCam) > 0.05;
+    o.visible = fadeRef.current > 0.01 && _n.dot(_toCam) > 0.05;
     if (!o.visible) return;
-    const d = UP.dot(_n);
-    if (Math.abs(d) > 0.995) {
-      // horizontal face: no world-up to align with — read like a page on a
-      // table, text-up pointing away from the camera horizontally
-      _u.set(_pos.x - camera.position.x, 0, _pos.z - camera.position.z);
-      if (_u.lengthSq() < 1e-6) return;
-      _u.normalize();
-    } else {
-      _u.copy(UP).addScaledVector(_n, -d).normalize();
+    for (const text of o.children) {
+      text.fillOpacity = fadeRef.current;
+      text.outlineOpacity = fadeRef.current;
     }
+    const d = UP.dot(_n);
+    if (Math.abs(d) > 0.995) return;
+    _u.copy(UP).addScaledVector(_n, -d).normalize();
     _r.crossVectors(_u, _n).normalize();
     _u.crossVectors(_n, _r);
     _world.makeBasis(_r, _u, _n).setPosition(_pos);
@@ -160,6 +162,61 @@ function SurfaceLabel({ groupRef, position, normal, visible = true, children }) 
   );
 }
 
+// A function abbreviation with its rank as a trailing subscript, positioned
+// from the glyphs' measured widths (a fixed offset reads differently after
+// "Si" than after "Ne") and centered as a composite.
+const SUB_GAP = 0.025;
+const FnRankLabel = React.memo(function FnRankLabel({ fn, rank }) {
+  const mainRef = useRef();
+  const subRef = useRef();
+  const widths = useRef({ main: 0, sub: 0 });
+
+  const layout = () => {
+    const { main, sub } = widths.current;
+    if (!main || !sub || !mainRef.current || !subRef.current) return;
+    const mainX = -(SUB_GAP + sub) / 2;
+    mainRef.current.position.x = mainX;
+    subRef.current.position.x = mainX + main / 2 + SUB_GAP;
+  };
+  const measure = key => t => {
+    const b = t.textRenderInfo.blockBounds;
+    widths.current[key] = b[2] - b[0];
+    layout();
+  };
+
+  return (
+    <>
+      <Text
+        ref={mainRef}
+        onSync={measure('main')}
+        raycast={() => null}
+        fontSize={0.36}
+        color="#cccccc"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.02}
+        outlineColor="black"
+      >
+        {fn}
+      </Text>
+      <Text
+        ref={subRef}
+        onSync={measure('sub')}
+        raycast={() => null}
+        position={[0.16, -0.11, 0]}
+        fontSize={0.2}
+        color="#cccccc"
+        anchorX="left"
+        anchorY="middle"
+        outlineWidth={0.015}
+        outlineColor="black"
+      >
+        {String(rank)}
+      </Text>
+    </>
+  );
+});
+
 // Per-face constants derived from the model's canonical UV frame.
 function useFaceFrame(face) {
   return useMemo(() => {
@@ -171,30 +228,19 @@ function useFaceFrame(face) {
   }, [face]);
 }
 
-// Position within a face at `fraction` from center toward `corner` — laid
-// on the pole's superellipsoid surface (a face-plane position would float
-// where the surface recedes toward the edges), lifted slightly to avoid
-// z-fighting.
+// Position within a side face at `fraction` from center toward `corner` —
+// laid on the pole's superellipsoid surface (a face-plane position would
+// float where the surface recedes toward the edges), lifted slightly to
+// avoid z-fighting.
 function towardCorner(face, frame, corner, fraction, lift, exponent) {
   const p = new THREE.Vector3().lerpVectors(frame.center, corner, fraction);
   const halfW = POLE_WIDTH / 2;
-  if (face.isSide) {
-    const a = face.normal[0] !== 0 ? 'x' : 'z';
-    const t = a === 'x' ? 'z' : 'x';
-    const lt = p[t] - Math.sign(p[t]) * halfW;
-    // outward coordinate: pole axis offset + surface extent from that axis
-    p[a] = Math.sign(face.normal[a === 'x' ? 0 : 2])
-      * (halfW + poleExtent(lt, p.y, exponent) + lift);
-  } else {
-    // cap: solve the superellipsoid for height at the in-cap offsets
-    const lx = p.x - Math.sign(p.x) * halfW;
-    const lz = p.z - Math.sign(p.z) * halfW;
-    const rest = 1
-      - Math.abs(lx / halfW) ** exponent
-      - Math.abs(lz / halfW) ** exponent;
-    p.y = Math.sign(face.normal[1])
-      * ((POLE_HEIGHT / 2) * Math.max(rest, 1e-4) ** (1 / exponent) + lift);
-  }
+  const a = face.normal[0] !== 0 ? 'x' : 'z';
+  const t = a === 'x' ? 'z' : 'x';
+  const lt = p[t] - Math.sign(p[t]) * halfW;
+  // outward coordinate: pole axis offset + surface extent from that axis
+  p[a] = Math.sign(face.normal[a === 'x' ? 0 : 2])
+    * (halfW + poleExtent(lt, p.y, exponent) + lift);
   return p;
 }
 
@@ -326,11 +372,11 @@ function Pole({ pole, geometry, exponent, lineOpacity, selectedType, onSelect, o
   );
 }
 
-// A face's non-geometry dressing: the labels (the quadrant boundaries are
-// geometry — the grooves between poles and each pole's equator line). Every
-// face labels its four corner functions with the selected type's rank as a
-// subscript (stack 1–4, shadow 5–8); side faces add the type badge, shown
-// only for the selected type or the hovered quadrant.
+// A side face's non-geometry dressing: the labels (the quadrant boundaries
+// are geometry — the grooves between poles and each pole's equator line).
+// Each quadrant labels its function with the selected type's rank as a
+// subscript (stack 1–4, shadow 5–8), plus the type badge, shown only for
+// the selected type or while the quadrant is hovered.
 function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }) {
   const frame = useFaceFrame(face);
 
@@ -338,8 +384,7 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
     <group>
       {Object.entries(frame.corners).map(([key, corner]) => {
         const fn = face.corners[key];
-        const rank = functionRank(selectedType, fn);
-        const type = face.isSide ? typeAtCorner(face, key) : null;
+        const type = typeAtCorner(face, key);
         return (
           <group key={key}>
             <SurfaceLabel
@@ -347,28 +392,7 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
               position={towardCorner(face, frame, corner, 0.5, 0.02, exponent)}
               normal={frame.normal}
             >
-              <Text
-                position={[-0.07, 0, 0]}
-                fontSize={0.36}
-                color="#cccccc"
-                anchorX="center"
-                anchorY="middle"
-                outlineWidth={0.02}
-                outlineColor="black"
-              >
-                {fn}
-              </Text>
-              <Text
-                position={[0.16, -0.11, 0]}
-                fontSize={0.2}
-                color="#cccccc"
-                anchorX="left"
-                anchorY="middle"
-                outlineWidth={0.015}
-                outlineColor="black"
-              >
-                {String(rank)}
-              </Text>
+              <FnRankLabel fn={fn} rank={functionRank(selectedType, fn)} />
             </SurfaceLabel>
             {type && (
               <SurfaceLabel
@@ -378,6 +402,7 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
                 visible={type === selectedType || type === hoveredType}
               >
                 <Text
+                  raycast={() => null}
                   fontSize={0.15}
                   color={type === selectedType ? 'white' : '#bbbbbb'}
                   anchorX="center"
@@ -518,7 +543,7 @@ function CubeScene({ selectedType, setSelectedType, initialYaw, spin, exponent, 
           />
         ))}
 
-        {FACES.map(face => (
+        {FACES.filter(face => face.isSide).map(face => (
           <FaceAnnotations
             key={face.key}
             face={face}
