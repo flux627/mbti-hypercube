@@ -1,8 +1,9 @@
 // Run with: npm test  (plain node, no framework)
 import assert from 'node:assert/strict';
 import {
-  CORNERS, FACES, CORNER_UVS, TYPE_STACKS, RANK_COLORS,
-  faceOverlay, typeAtCorner, homeOrientation,
+  CORNERS, FACES, CORNER_UVS, POLES, TYPE_STACKS, RANK_COLORS,
+  faceOverlay, poleOverlay, typeAtCorner, homeOrientation,
+  flipAttitude, functionRank,
 } from './cubeModel.js';
 
 const types = Object.keys(TYPE_STACKS);
@@ -147,5 +148,89 @@ assert.equal(homeOrientation('ENTP').parity, 1);
 assert.equal(homeOrientation('INTP').parity, -1);
 assert.equal(homeOrientation('INFJ').parity, 1);
 assert.equal(homeOrientation('ENFJ').parity, -1);
+
+// ── Poles ───────────────────────────────────────────────────────────────────
+// The stacked-octant pairs are exactly the four vertical cube edges.
+assert.equal(POLES.length, 4);
+assert.deepEqual(
+  new Set(POLES.map(p => `${p.top}/${p.bottom}`)),
+  new Set(['Ni/Se', 'Fe/Ti', 'Te/Fi', 'Si/Ne']),
+);
+for (const p of POLES) {
+  assert.deepEqual(CORNERS[p.top], [p.sx, 1, p.sz], `${p.key} top corner`);
+  assert.deepEqual(CORNERS[p.bottom], [p.sx, -1, p.sz], `${p.key} bottom corner`);
+}
+
+for (const t of types) {
+  const s = TYPE_STACKS[t];
+  const painted = POLES.filter(p => poleOverlay(p, t));
+  assert.equal(painted.length, 2, `${t} paints two poles`);
+  // dominant/inferior share one pole, auxiliary/tertiary the other
+  const holds = fn => painted.find(p => p.top === fn || p.bottom === fn);
+  assert.equal(holds(s[0]), holds(s[3]), `${t} dom/inf pole`);
+  assert.equal(holds(s[1]), holds(s[2]), `${t} aux/tert pole`);
+
+  const { normal } = homeOrientation(t);
+  for (const p of painted) {
+    const o = poleOverlay(p, t);
+    // gradient endpoints are the corners' rank colors
+    assert.equal(o.colorTop, RANK_COLORS[s.indexOf(p.top)], `${t}/${p.key} top color`);
+    assert.equal(o.colorBottom, RANK_COLORS[s.indexOf(p.bottom)], `${t}/${p.key} bottom color`);
+    // painted poles front the type's face at full strength…
+    assert.deepEqual(o.dirFace, normal, `${t}/${p.key} fronts home face`);
+    assert.equal(dot(o.dirFace, [p.sx, 0, p.sz]), 1, `${t}/${p.key} adjacent to home face`);
+    // …and bleed outward on the perpendicular horizontal axis
+    assert.equal(dot(o.dirSide, o.dirFace), 0, `${t}/${p.key} side ⟂ face`);
+    assert.equal(o.dirSide[1], 0, `${t}/${p.key} side is horizontal`);
+    assert.equal(dot(o.dirSide, [p.sx, 0, p.sz]), 1, `${t}/${p.key} side is outward`);
+  }
+}
+
+// Reference: INFJ paints Ni/Se red→blue and Fe/Ti orange→cyan on face x-.
+{
+  const niSe = poleOverlay(POLES.find(p => p.top === 'Ni'), 'INFJ');
+  assert.deepEqual(
+    [niSe.colorTop, niSe.colorBottom, niSe.dirFace, niSe.dirSide],
+    ['#ff0000', '#0000ff', [-1, 0, 0], [0, 0, -1]],
+  );
+  const feTi = poleOverlay(POLES.find(p => p.top === 'Fe'), 'INFJ');
+  assert.deepEqual(
+    [feTi.colorTop, feTi.colorBottom, feTi.dirFace, feTi.dirSide],
+    ['#ff8a00', '#00aeff', [-1, 0, 0], [0, 0, 1]],
+  );
+  assert.equal(poleOverlay(POLES.find(p => p.top === 'Si'), 'INFJ'), null);
+  assert.equal(poleOverlay(POLES.find(p => p.top === 'Te'), 'INFJ'), null);
+}
+
+// ── Function ranks 1–8 ──────────────────────────────────────────────────────
+const allFns = Object.keys(CORNERS);
+for (const [a, b] of [['Ni', 'Ne'], ['Ti', 'Te'], ['Fi', 'Fe'], ['Si', 'Se']]) {
+  assert.equal(flipAttitude(a), b);
+  assert.equal(flipAttitude(b), a);
+}
+for (const t of types) {
+  const s = TYPE_STACKS[t];
+  // the eight functions carry each rank exactly once
+  assert.deepEqual(
+    new Set(allFns.map(fn => functionRank(t, fn))),
+    new Set([1, 2, 3, 4, 5, 6, 7, 8]),
+    `${t} ranks are a permutation`,
+  );
+  for (let i = 0; i < 4; i++) {
+    assert.equal(functionRank(t, s[i]), i + 1, `${t} stack rank ${i + 1}`);
+    assert.equal(functionRank(t, flipAttitude(s[i])), i + 5, `${t} shadow rank ${i + 5}`);
+    // shadow functions sit at the antipodal corners of their stack partners
+    assert.deepEqual(
+      CORNERS[flipAttitude(s[i])],
+      CORNERS[s[i]].map(v => -v),
+      `${t} shadow ${i + 5} antipodal`,
+    );
+  }
+}
+// Reference: ENTP is Ne₁ Ti₂ Fe₃ Si₄ with shadow Ni₅ Te₆ Fi₇ Se₈.
+assert.deepEqual(
+  ['Ne', 'Ti', 'Fe', 'Si', 'Ni', 'Te', 'Fi', 'Se'].map(fn => functionRank('ENTP', fn)),
+  [1, 2, 3, 4, 5, 6, 7, 8],
+);
 
 console.log('cubeModel: all tests passed');

@@ -50,6 +50,19 @@ export const CUBE_EDGES = [
   ['Fi', 'Ne'], ['Si', 'Ne'],
 ];
 
+// The four poles: pairs of octants stacked along y, i.e. the two ends of each
+// vertical cube edge (Ni/Se, Fe/Ti, Te/Fi, Si/Ne). The visualization renders
+// each pole as one continuous column — rounded everywhere except the seam
+// where its two octants meet — so the stacked pairs read as units. sx/sz are
+// the pole's horizontal corner signs.
+export const POLES = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sx, sz]) => {
+  const at = y => Object.keys(CORNERS).find(fn => {
+    const [x, cy, z] = CORNERS[fn];
+    return x === sx && cy === y && z === sz;
+  });
+  return { key: `${sx > 0 ? 'x+' : 'x-'}${sz > 0 ? 'z+' : 'z-'}`, sx, sz, top: at(1), bottom: at(-1) };
+});
+
 // The canonical viewing pose for a type: its face fronting the viewer with
 // the stack laid out as the standard grid — dominant top-left, auxiliary
 // top-right, tertiary bottom-right, inferior bottom-left. The dominant–
@@ -94,6 +107,19 @@ function detSign(a, b, c) {
   );
 }
 
+// Attitude flip: Ni ↔ Ne, Ti ↔ Te, etc. Because opposite functions are
+// antipodal, a function's flip sits at the diagonally opposite corner.
+export const flipAttitude = fn => fn[0] + (fn[1] === 'i' ? 'e' : 'i');
+
+// Rank 1–8 of any of the eight functions for a type: the stack ranks 1–4,
+// and the shadow — the stack's attitude-flips in order — ranks 5–8.
+export function functionRank(type, fn) {
+  const stack = TYPE_STACKS[type];
+  if (!stack) return null;
+  const i = stack.indexOf(fn);
+  return i !== -1 ? i + 1 : stack.indexOf(flipAttitude(fn)) + 5;
+}
+
 // The type sitting at a given corner of a face: the one whose dominant
 // function is that corner and whose whole stack lives on the face.
 export function typeAtCorner(face, cornerKey) {
@@ -103,6 +129,26 @@ export function typeAtCorner(face, cornerKey) {
     const stack = TYPE_STACKS[t];
     return stack[0] === fn && faceFns.every(f => stack.includes(f));
   }) || null;
+}
+
+// What a pole displays for the selected type. The stack's four functions
+// occupy exactly two poles — dominant/inferior on one, auxiliary/tertiary on
+// the other, both fronting the type's face; the other two poles show nothing.
+// A painted pole carries one gradient column, colorBottom→colorTop by rank:
+// full strength on its surface fronting the type's face (dirFace), fading
+// toward the cube's interior on its outward side surface (dirSide) and on
+// both caps.
+export function poleOverlay(pole, type) {
+  const stack = TYPE_STACKS[type];
+  if (!stack || !stack.includes(pole.top)) return null;
+  const rankColor = fn => RANK_COLORS[stack.indexOf(fn)];
+  const { normal } = homeOrientation(type);
+  return {
+    colorTop: rankColor(pole.top),
+    colorBottom: rankColor(pole.bottom),
+    dirFace: normal,
+    dirSide: normal[0] !== 0 ? [0, 0, pole.sz] : [pole.sx, 0, 0],
+  };
 }
 
 // What a face displays for the selected type. A face contains either 4, 2, or

@@ -1,4 +1,4 @@
-# MBTI Cognitive-Function Hypercube
+# Cognitive Cube
 
 An interactive 3D visualization of the structure hiding inside the MBTI
 cognitive-function system: the eight functions arranged on the corners of a
@@ -19,6 +19,20 @@ Place the eight cognitive functions on the corners of a cube like this:
   corner of its dominant function, so all 16 types tile the four side faces,
   one quadrant each. The top and bottom faces are not type faces: no valid
   stack draws all four of its functions from them.
+
+The cube is drawn as those four stacked pairs — Si/Ne, Fe/Ti, Ni/Se, Te/Fi —
+rendered as continuous vertical **poles**: one superellipsoid
+(|x/a|ⁿ + |y/b|ⁿ + |z/c|ⁿ = 1, the 3D squircle) per pair, inherently
+seamless at the octant junction, with Apple-icon-style continuous curvature
+at every corner — no flat-to-arc crease anywhere. The exponent n sets the
+sharpness (2 = ellipsoid, higher → a sharp box) and opens grooves between
+neighboring poles that make the columns read as units; it's locked at
+n = 7 (override via `?n=`).
+
+Every corner label shows its function with the selected type's rank as a
+subscript, on all six faces: the stack 1–4, and the attitude-flipped shadow
+functions 5–8 — which sit at the antipodal corners. Type badges appear on a
+quadrant when hovered; only the selected type's badge stays visible.
 
 Selecting a type paints its face by stack rank at each corner —
 <span>1&nbsp;dominant&nbsp;red, 2&nbsp;auxiliary&nbsp;orange,
@@ -46,31 +60,43 @@ npm install
 npm run dev      # dev server
 npm test         # pure-model unit tests (node, no framework)
 npm run build    # production bundle in dist/
+npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
 ```
 
 - **Dropdown** or **click a face quadrant** to select a type — the cube
   animates to that type's home pose (flipping through the mirror when needed).
 - **Drag** to orbit (auto-rotation stops on first interaction), scroll to zoom.
+- **Hover a quadrant** to reveal its type badge.
 - URL parameters make any view linkable and screenshot-testable:
-  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45`
+  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45&n=7&lines=0.1`
   — initial type (the cube starts in its home pose), disable auto-rotation,
-  camera position, and an explicit cube yaw in degrees (overrides the home
-  pose; useful for framing the rest orientation).
+  camera position, an explicit cube yaw in degrees (overrides the home
+  pose; useful for framing the rest orientation), the superellipsoid
+  exponent (default 7), and the equator line opacity (default 0.1).
 
 ## Architecture
 
 - `src/data/mbtiData.js` — the 16 stacks and the four function-set groups.
 - `src/lib/cubeModel.js` — pure model, no three.js: corner layout, the six
-  faces with canonical UV frames, `faceOverlay(face, type)`, which reduces
-  everything drawn to one rule (corner colors from stack ranks; a face shows a
-  full two-column gradient if it holds all 4 stack functions, an edge bleed if
-  it holds 2, nothing if 0), and `homeOrientation(type)`, the possibly-improper
-  frame of the home pose with its `parity`.
+  faces with canonical UV frames, the four `POLES`, `faceOverlay(face, type)`,
+  which reduces everything drawn to one rule (corner colors from stack ranks;
+  a face shows a full two-column gradient if it holds all 4 stack functions,
+  an edge bleed if it holds 2, nothing if 0), `poleOverlay(pole, type)`, the
+  same rule re-expressed per pole (gradient colors plus the face/side fade
+  directions the pole shader consumes), `functionRank(type, fn)`, the 1–8
+  rank of any function including the shadow, and `homeOrientation(type)`,
+  the possibly-improper frame of the home pose with its `parity`.
 - `src/lib/cubeModel.test.js` — asserts the geometric invariants the
   visualization relies on (vertical dom–inf edges, type placement, overlay
-  counts, reference colors, canonical home-pose layout, the 8/8 parity split).
-- `src/components/ThreeHypercube.jsx` — react-three-fiber scene: face meshes,
-  two small shaders (full-face columns, edge bleed), interaction, and the pose
+  counts, pole pairing and per-pole paint directions, rank permutations and
+  shadow antipodality, reference colors, canonical home-pose layout, the
+  8/8 parity split).
+- `src/components/superellipsoid.js` — the pole surface: a subdivided box
+  projected radially onto the superellipsoid, with analytic gradient normals.
+- `src/components/CognitiveCube.jsx` — react-three-fiber scene: four
+  superellipsoid pole meshes sharing one geometry, one shader (the per-face
+  paint rules blended by surface normal, so color wraps the rounded edges and
+  dies in the grooves), interaction, and the pose
   system — the group's transform is rotation ∘ cube-local mirror, animated by
   slerping the rotation while the mirror's scale component crosses zero, with
   labels re-based to world-upright matrices each frame.
