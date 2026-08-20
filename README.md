@@ -34,14 +34,17 @@ type's rank as a subscript: the stack 1–4, and the attitude-flipped shadow
 functions 5–8 — which sit at the antipodal corners. Type badges fade in on
 a hovered quadrant; only the selected type's badge stays visible.
 
-Selecting a type paints its face by stack rank at each corner —
+Selecting a type colors every corner by rank —
 <span>1&nbsp;dominant&nbsp;red, 2&nbsp;auxiliary&nbsp;orange,
-3&nbsp;tertiary&nbsp;cyan, 4&nbsp;inferior&nbsp;blue</span> — as two vertical
-gradient columns: one running dominant→inferior, the other
-auxiliary→tertiary. The colors continue over the face's four edges onto the
-neighboring faces, fading out: side neighbors continue the gradient columns,
-the top and bottom faces continue the columns' end colors. All of it is
-computed from the corner ranks; there is no per-type configuration anywhere.
+3&nbsp;tertiary&nbsp;cyan, 4&nbsp;inferior&nbsp;blue</span>, with the shadow
+corners (5–8, antipodal by construction) carrying the same hues dimmed.
+Each pole is the vertical gradient between its own two corner colors, and
+along the home-face axis the surface blends toward its partner pole's
+gradient: the type's face and its opposite show crisp columns — dom→inf
+beside aux→tert in front, their dimmed shadows behind — while the faces
+between them fade bright→dark, continuously through the grooves. All of it
+is computed from the corner ranks; there is no per-type configuration
+anywhere.
 
 Selecting a type also glides the cube to that type's **home pose**: its face
 fronting the camera with the stack laid out as the standard grid — dominant
@@ -81,11 +84,12 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
   faces with canonical UV frames, the four `POLES`, `faceOverlay(face, type)`,
   which reduces everything drawn to one rule (corner colors from stack ranks;
   a face shows a full two-column gradient if it holds all 4 stack functions,
-  an edge bleed if it holds 2, nothing if 0), `poleOverlay(pole, type)`, the
-  same rule re-expressed per pole (gradient colors plus the face/side fade
-  directions the pole shader consumes), `functionRank(type, fn)`, the 1–8
-  rank of any function including the shadow, and `homeOrientation(type)`,
-  the possibly-improper frame of the home pose with its `parity`.
+  an edge bleed if it holds 2, nothing if 0), `cornerColor(type, fn)` and
+  `poleShading(pole, type)`, the per-corner colors (dimmed shadows) and the
+  near/far gradient pairs the pole shader blends, `functionRank(type, fn)`,
+  the 1–8 rank of any function including the shadow, and
+  `homeOrientation(type)`, the possibly-improper frame of the home pose with
+  its `parity`.
 - `src/lib/cubeModel.test.js` — asserts the geometric invariants the
   visualization relies on (vertical dom–inf edges, type placement, overlay
   counts, pole pairing and per-pole paint directions, rank permutations and
@@ -94,9 +98,9 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
 - `src/components/superellipsoid.js` — the pole surface: a subdivided box
   projected radially onto the superellipsoid, with analytic gradient normals.
 - `src/components/CognitiveCube.jsx` — react-three-fiber scene: four
-  superellipsoid pole meshes sharing one geometry, one shader (the per-face
-  paint rules blended by surface normal, so color wraps the rounded edges and
-  dies in the grooves), interaction, and the pose
+  superellipsoid pole meshes sharing one geometry, one shader (per-pole
+  corner gradients blended along the home-face axis, with a touch of baked
+  view-space lighting), interaction, and the pose
   system — the group's transform is rotation ∘ cube-local mirror, animated by
   slerping the rotation while the mirror's scale component crosses zero, with
   labels re-based to world-upright matrices each frame.

@@ -1,8 +1,8 @@
 // Run with: npm test  (plain node, no framework)
 import assert from 'node:assert/strict';
 import {
-  CORNERS, FACES, CORNER_UVS, POLES, TYPE_STACKS, RANK_COLORS,
-  faceOverlay, poleOverlay, typeAtCorner, homeOrientation,
+  CORNERS, FACES, CORNER_UVS, POLES, TYPE_STACKS, RANK_COLORS, SHADOW_DIM,
+  faceOverlay, poleShading, cornerColor, typeAtCorner, homeOrientation,
   flipAttitude, functionRank,
 } from './cubeModel.js';
 
@@ -161,45 +161,57 @@ for (const p of POLES) {
   assert.deepEqual(CORNERS[p.bottom], [p.sx, -1, p.sz], `${p.key} bottom corner`);
 }
 
+// Every corner has a color: bright rank colors for the stack, the same hue
+// dimmed by SHADOW_DIM for the shadow at the antipodal corner.
+const dimHex = hex => '#' + [1, 3, 5]
+  .map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * SHADOW_DIM)
+    .toString(16).padStart(2, '0')).join('');
 for (const t of types) {
   const s = TYPE_STACKS[t];
-  const painted = POLES.filter(p => poleOverlay(p, t));
-  assert.equal(painted.length, 2, `${t} paints two poles`);
-  // dominant/inferior share one pole, auxiliary/tertiary the other
-  const holds = fn => painted.find(p => p.top === fn || p.bottom === fn);
-  assert.equal(holds(s[0]), holds(s[3]), `${t} dom/inf pole`);
-  assert.equal(holds(s[1]), holds(s[2]), `${t} aux/tert pole`);
-
-  const { normal } = homeOrientation(t);
-  for (const p of painted) {
-    const o = poleOverlay(p, t);
-    // gradient endpoints are the corners' rank colors
-    assert.equal(o.colorTop, RANK_COLORS[s.indexOf(p.top)], `${t}/${p.key} top color`);
-    assert.equal(o.colorBottom, RANK_COLORS[s.indexOf(p.bottom)], `${t}/${p.key} bottom color`);
-    // painted poles front the type's face at full strength…
-    assert.deepEqual(o.dirFace, normal, `${t}/${p.key} fronts home face`);
-    assert.equal(dot(o.dirFace, [p.sx, 0, p.sz]), 1, `${t}/${p.key} adjacent to home face`);
-    // …and bleed outward on the perpendicular horizontal axis
-    assert.equal(dot(o.dirSide, o.dirFace), 0, `${t}/${p.key} side ⟂ face`);
-    assert.equal(o.dirSide[1], 0, `${t}/${p.key} side is horizontal`);
-    assert.equal(dot(o.dirSide, [p.sx, 0, p.sz]), 1, `${t}/${p.key} side is outward`);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(cornerColor(t, s[i]), RANK_COLORS[i], `${t} rank ${i + 1} color`);
+    assert.equal(
+      cornerColor(t, flipAttitude(s[i])),
+      dimHex(RANK_COLORS[i]),
+      `${t} shadow ${i + 5} is dimmed rank ${i + 1}`,
+    );
   }
 }
 
-// Reference: INFJ paints Ni/Se red→blue and Fe/Ti orange→cyan on face x-.
+for (const t of types) {
+  const { normal } = homeOrientation(t);
+  for (const p of POLES) {
+    const sh = poleShading(p, t);
+    assert.deepEqual(sh.dirFace, normal, `${t}/${p.key} blend axis`);
+    // near pair are the home-face poles' corner colors, far the shadows'
+    const isNear = dot([p.sx, 0, p.sz], normal) === 1;
+    const own = isNear ? ['nearTop', 'nearBottom'] : ['farTop', 'farBottom'];
+    assert.equal(sh[own[0]], cornerColor(t, p.top), `${t}/${p.key} own top`);
+    assert.equal(sh[own[1]], cornerColor(t, p.bottom), `${t}/${p.key} own bottom`);
+    // the pole across the blend axis shares the same field, so the color
+    // is continuous through the groove between them
+    const partner = POLES.find(q =>
+      q !== p && (normal[0] !== 0 ? q.sz === p.sz : q.sx === p.sx));
+    assert.deepEqual(poleShading(partner, t), sh, `${t}/${p.key} continuous pair`);
+  }
+}
+
+// Reference: INFJ — near pair Ni/Se (red→blue) and Fe/Ti (orange→cyan);
+// far pair carries the dimmed shadow colors (Te₇ dark cyan over Fi₆ dark
+// orange, Si₈ dark blue over Ne₅ dark red).
 {
-  const niSe = poleOverlay(POLES.find(p => p.top === 'Ni'), 'INFJ');
-  assert.deepEqual(
-    [niSe.colorTop, niSe.colorBottom, niSe.dirFace, niSe.dirSide],
-    ['#ff0000', '#0000ff', [-1, 0, 0], [0, 0, -1]],
-  );
-  const feTi = poleOverlay(POLES.find(p => p.top === 'Fe'), 'INFJ');
-  assert.deepEqual(
-    [feTi.colorTop, feTi.colorBottom, feTi.dirFace, feTi.dirSide],
-    ['#ff8a00', '#00aeff', [-1, 0, 0], [0, 0, 1]],
-  );
-  assert.equal(poleOverlay(POLES.find(p => p.top === 'Si'), 'INFJ'), null);
-  assert.equal(poleOverlay(POLES.find(p => p.top === 'Te'), 'INFJ'), null);
+  const niSe = poleShading(POLES.find(p => p.top === 'Ni'), 'INFJ');
+  assert.deepEqual(niSe, {
+    nearTop: '#ff0000', nearBottom: '#0000ff',
+    farTop: dimHex('#00aeff'), farBottom: dimHex('#ff8a00'),
+    dirFace: [-1, 0, 0],
+  });
+  const siNe = poleShading(POLES.find(p => p.top === 'Si'), 'INFJ');
+  assert.deepEqual(siNe, {
+    nearTop: '#ff8a00', nearBottom: '#00aeff',
+    farTop: dimHex('#0000ff'), farBottom: dimHex('#ff0000'),
+    dirFace: [-1, 0, 0],
+  });
 }
 
 // ── Function ranks 1–8 ──────────────────────────────────────────────────────

@@ -47,9 +47,10 @@ function App() {
         form four continuous poles, kept seamless while every other edge rounds
         off. Each side face carries the four types that share a
         function set, each at the corner of its dominant function. Select a type
-        (dropdown, or click a quadrant) to paint its face: one pole runs
+        (dropdown, or click a quadrant) to paint the cube: one pole runs
         dominant&nbsp;→&nbsp;inferior, the other auxiliary&nbsp;→&nbsp;tertiary,
-        and both spill over the shared edges onto the neighboring faces.
+        the shadow poles behind carry the same hues dimmed (ranks 5–8), and
+        the side faces blend front to back between them.
       </p>
 
       <div className="type-selector-container">

@@ -4,7 +4,7 @@ import { OrbitControls, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { superellipsoidGeometry } from './superellipsoid.js';
 import {
-  CORNERS, FACES, POLES, functionRank, poleOverlay, typeAtCorner, homeOrientation,
+  CORNERS, FACES, POLES, functionRank, poleShading, typeAtCorner, homeOrientation,
 } from '../lib/cubeModel.js';
 
 const SCALE = 1.5;
@@ -35,47 +35,38 @@ const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 
 const poleVertexShader = /* glsl */ `
   uniform vec3 poleCenter;
   varying vec3 vPos;
-  varying vec3 vNormal;
+  varying vec3 vViewNormal;
   void main() {
     vPos = position + poleCenter;
-    vNormal = normal;
+    vViewNormal = normalMatrix * normal;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-// A painted pole carries one vertical gradient column, colorBottom→colorTop.
-// Weighting each cube-face direction by the surface normal applies the flat
-// per-face rules — full strength fronting the type's face, fading toward the
-// cube's interior on the outward side face and on both caps — and blends
-// them smoothly across the rounded edges; normals facing the cube's interior
-// fade the paint out entirely, so color dies inside the grooves.
+// Every pole is fully painted: the vertical gradient between its own two
+// corner colors, blended along the home-face axis toward its partner pole's
+// gradient — so the home face and its opposite show crisp columns while the
+// faces between them fade bright→dark, continuously through the grooves.
+// A touch of view-space lighting keeps the rounded form legible.
 const poleFragmentShader = /* glsl */ `
-  uniform vec3 colorTop, colorBottom;
-  uniform vec3 dirFace, dirSide, poleCenter;
-  uniform float halfWidth, halfHeight;
+  uniform vec3 nearTop, nearBottom, farTop, farBottom;
+  uniform vec3 dirFace;
+  uniform float halfHeight, halfSpan;
   varying vec3 vPos;
-  varying vec3 vNormal;
+  varying vec3 vViewNormal;
   void main() {
-    vec3 n = normalize(vNormal);
     float ty = clamp((vPos.y + halfHeight) / (2.0 * halfHeight), 0.0, 1.0);
-    vec3 grad = mix(colorBottom, colorTop, ty);
-    // distance toward the type's face: 1 on that face, 0 at the cube's middle
-    float u = dot(vPos - poleCenter, dirFace);
-    float fade = clamp((u + halfWidth) / (2.0 * halfWidth), 0.0, 1.0);
+    vec3 nearC = mix(nearBottom, nearTop, ty);
+    vec3 farC = mix(farBottom, farTop, ty);
+    float w = clamp((dot(vPos, dirFace) / halfSpan + 1.0) * 0.5, 0.0, 1.0);
+    vec3 color = mix(farC, nearC, w);
 
-    float wFace = max(dot(n, dirFace), 0.0);
-    float wSide = max(dot(n, dirSide), 0.0);
-    float wTop = max(n.y, 0.0);
-    float wBottom = max(-n.y, 0.0);
-    float wInner = max(dot(n, -dirFace), 0.0) + max(dot(n, -dirSide), 0.0);
-
-    float paint = wFace + fade * (wSide + wTop + wBottom);
-    vec3 color =
-      (wFace * grad + fade * (wSide * grad + wTop * colorTop + wBottom * colorBottom))
-      / max(paint, 1e-5);
-    float alpha = paint / max(wFace + wSide + wTop + wBottom + wInner, 1e-5);
-    if (alpha < 0.004) discard;
-    gl_FragColor = vec4(color, alpha);
+    vec3 n = normalize(vViewNormal);
+    vec3 lightDir = normalize(vec3(0.35, 0.5, 0.8));
+    float diff = max(dot(n, lightDir), 0.0);
+    float spec = pow(max(dot(n, normalize(lightDir + vec3(0.0, 0.0, 1.0))), 0.0), 48.0);
+    color = color * (0.72 + 0.28 * diff) + vec3(0.12) * spec;
+    gl_FragColor = vec4(color, 1.0);
   }
 `;
 
@@ -249,47 +240,34 @@ function Pole({ pole, geometry, exponent, lineOpacity, selectedType, onSelect, o
     () => new THREE.Vector3(pole.sx * POLE_WIDTH / 2, 0, pole.sz * POLE_WIDTH / 2),
     [pole],
   );
-  const overlay = useMemo(() => poleOverlay(pole, selectedType), [pole, selectedType]);
+  const shading = useMemo(() => poleShading(pole, selectedType), [pole, selectedType]);
 
-  const baseMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#4d4d4d',
-    roughness: 0.45,
-    metalness: 0.25,
-    side: THREE.DoubleSide,
-  }), []);
-
-  const overlayMaterial = useMemo(() => new THREE.ShaderMaterial({
+  const material = useMemo(() => new THREE.ShaderMaterial({
     vertexShader: poleVertexShader,
     fragmentShader: poleFragmentShader,
     uniforms: {
-      colorTop: { value: new THREE.Color() },
-      colorBottom: { value: new THREE.Color() },
+      nearTop: { value: new THREE.Color() },
+      nearBottom: { value: new THREE.Color() },
+      farTop: { value: new THREE.Color() },
+      farBottom: { value: new THREE.Color() },
       dirFace: { value: new THREE.Vector3() },
-      dirSide: { value: new THREE.Vector3() },
       poleCenter: { value: center.clone() },
-      halfWidth: { value: POLE_WIDTH / 2 },
       halfHeight: { value: POLE_HEIGHT / 2 },
+      halfSpan: { value: SCALE },
     },
-    transparent: true,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
     side: THREE.DoubleSide,
   }), [center]);
 
-  useEffect(() => () => {
-    baseMaterial.dispose();
-    overlayMaterial.dispose();
-  }, [baseMaterial, overlayMaterial]);
+  useEffect(() => () => material.dispose(), [material]);
 
   useEffect(() => {
-    if (!overlay) return;
-    const u = overlayMaterial.uniforms;
-    u.colorTop.value.set(overlay.colorTop);
-    u.colorBottom.value.set(overlay.colorBottom);
-    u.dirFace.value.set(...overlay.dirFace);
-    u.dirSide.value.set(...overlay.dirSide);
-  }, [overlay, overlayMaterial]);
+    const u = material.uniforms;
+    u.nearTop.value.set(shading.nearTop);
+    u.nearBottom.value.set(shading.nearBottom);
+    u.farTop.value.set(shading.farTop);
+    u.farBottom.value.set(shading.farBottom);
+    u.dirFace.value.set(...shading.dirFace);
+  }, [shading, material]);
 
   // The cube face this event's surface belongs to — null for caps, and for
   // rounded regions facing another pole (grooves), which don't select.
@@ -353,14 +331,11 @@ function Pole({ pole, geometry, exponent, lineOpacity, selectedType, onSelect, o
     <group position={center}>
       <mesh
         geometry={geometry}
-        material={baseMaterial}
+        material={material}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerOut={() => { onHover(null); document.body.style.cursor = 'auto'; }}
       />
-      {overlay && (
-        <mesh geometry={geometry} material={overlayMaterial} raycast={() => null} />
-      )}
       {lineOpacity > 0 && (
         <Line
           points={equator}
@@ -527,10 +502,6 @@ function CubeScene({ selectedType, setSelectedType, initialYaw, spin, exponent, 
 
   return (
     <>
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[6, 10, 7]} intensity={1.6} />
-      <directionalLight position={[-8, -4, -6]} intensity={0.5} />
-
       <group ref={groupRef}>
         {POLES.map(pole => (
           <Pole

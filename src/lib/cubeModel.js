@@ -131,23 +131,48 @@ export function typeAtCorner(face, cornerKey) {
   }) || null;
 }
 
-// What a pole displays for the selected type. The stack's four functions
-// occupy exactly two poles — dominant/inferior on one, auxiliary/tertiary on
-// the other, both fronting the type's face; the other two poles show nothing.
-// A painted pole carries one gradient column, colorBottom→colorTop by rank:
-// full strength on its surface fronting the type's face (dirFace), fading
-// toward the cube's interior on its outward side surface (dirSide) and on
-// both caps.
-export function poleOverlay(pole, type) {
-  const stack = TYPE_STACKS[type];
-  if (!stack || !stack.includes(pole.top)) return null;
-  const rankColor = fn => RANK_COLORS[stack.indexOf(fn)];
-  const { normal } = homeOrientation(type);
+// Shadow corners carry a darkened version of their attitude-partner's rank
+// color: rank 5 dims rank 1's color, 6 dims 2's, 7 dims 3's, 8 dims 4's.
+export const SHADOW_DIM = 0.3;
+
+function dim(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const scale = v => Math.round(v * f);
+  return '#' + [scale(n >> 16), scale((n >> 8) & 255), scale(n & 255)]
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// The color of any corner for a type: the stack's rank colors 1–4 at full
+// strength, their shadows 5–8 dimmed.
+export function cornerColor(type, fn) {
+  const rank = functionRank(type, fn);
+  return rank <= 4
+    ? RANK_COLORS[rank - 1]
+    : dim(RANK_COLORS[rank - 5], SHADOW_DIM);
+}
+
+// What a pole displays for the selected type. Every corner has a color
+// (bright stack ranks, dimmed shadows); each pole carries the vertical
+// gradient between its own corners' colors, and along the home-face axis
+// (dirFace) the surface blends from the near pair's gradient to the far
+// pair's — so the home face and its opposite show crisp columns while the
+// faces between them fade bright→dark. The two poles that share a
+// perpendicular sign return the same near/far colors, keeping the field
+// continuous across the groove between them; the split perpendicular to
+// dirFace stays hard, carried by the pole boundaries themselves.
+export function poleShading(pole, type) {
+  const dirFace = homeOrientation(type).normal;
+  // this pole's partner across the blend axis: same perpendicular sign
+  const partner = POLES.find(p =>
+    p !== pole && (dirFace[0] !== 0 ? p.sz === pole.sz : p.sx === pole.sx));
+  const isNear = (dirFace[0] !== 0 ? pole.sx * dirFace[0] : pole.sz * dirFace[2]) > 0;
+  const [near, far] = isNear ? [pole, partner] : [partner, pole];
   return {
-    colorTop: rankColor(pole.top),
-    colorBottom: rankColor(pole.bottom),
-    dirFace: normal,
-    dirSide: normal[0] !== 0 ? [0, 0, pole.sz] : [pole.sx, 0, 0],
+    nearTop: cornerColor(type, near.top),
+    nearBottom: cornerColor(type, near.bottom),
+    farTop: cornerColor(type, far.top),
+    farBottom: cornerColor(type, far.bottom),
+    dirFace,
   };
 }
 
