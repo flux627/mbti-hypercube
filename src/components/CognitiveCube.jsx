@@ -320,6 +320,9 @@ function Pole({ pole, geometry, exponent, lineOpacity, selectedType, onSelect, o
   };
 
   const handlePointerMove = (e) => {
+    // only the nearest pole may claim the hover — without this, the ray
+    // continues through the cube and the poles BEHIND overwrite it
+    e.stopPropagation();
     const type = typeAt(e);
     onHover(type);
     document.body.style.cursor = type ? 'pointer' : 'auto';
