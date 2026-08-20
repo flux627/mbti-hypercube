@@ -6,6 +6,10 @@ import { superellipsoidGeometry } from './superellipsoid.js';
 import {
   CORNERS, FACES, POLES, functionRank, poleShading, typeAtCorner, homeOrientation,
 } from '../lib/cubeModel.js';
+import {
+  identityLattice, latticeDet, composeLattice, DANCES,
+  swapOrbitCenter, swapHopCenters, flipPose,
+} from '../lib/choreography.js';
 
 const SCALE = 1.5;
 // The cube is drawn as the four POLES: vertical columns of two stacked
@@ -27,8 +31,6 @@ function poleExtent(lt, y, exponent) {
   return (POLE_WIDTH / 2) * Math.max(rest, 1e-4) ** (1 / exponent);
 }
 const UP = new THREE.Vector3(0, 1, 0);
-// S_x · S_z — re-expresses a cube-local mirror from one axis onto the other.
-const FLIP_XZ = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 const ANIM_SECONDS = 1.1;
 const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -76,10 +78,12 @@ const poleFragmentShader = /* glsl */ `
 
 // The world pose that shows `type` canonically (dominant top-left, stack as
 // the standard grid), fronting the camera's current horizontal direction.
-// Expressed as rotation ∘ cube-local mirror: { q, sign, axis } where the
-// group's scale carries `sign` (±1) on `axis`.
-function homePose(type, camera) {
-  const { normal, up, right, parity } = homeOrientation(type);
+// The group is always a proper rotation: any reflection in the home
+// orientation is carried by the pole lattice L, so the returned quaternion
+// is the home matrix times L — proper whenever det(L) matches the type's
+// parity, which the transition planner guarantees.
+function homePoseQuat(type, camera, lattice) {
+  const { normal, up, right } = homeOrientation(type);
   const h = new THREE.Vector3(camera.position.x, 0, camera.position.z);
   if (h.lengthSq() < 1e-6) h.set(1, 0, 1);
   h.normalize();
@@ -90,18 +94,34 @@ function homePose(type, camera) {
     .multiply(new THREE.Matrix4().makeBasis(
       new THREE.Vector3(...right), new THREE.Vector3(...up), new THREE.Vector3(...normal),
     ).transpose());
-
-  const axis = normal[0] !== 0 ? 'x' : 'z';
-  if (parity === -1) {
-    // fold the reflection into a cube-local mirror across the face plane,
-    // leaving a proper rotation: q = M · S_axis
-    m.scale(axis === 'x' ? new THREE.Vector3(-1, 1, 1) : new THREE.Vector3(1, 1, -1));
-  }
-  return { q: new THREE.Quaternion().setFromRotationMatrix(m), sign: parity, axis };
+  m.scale(new THREE.Vector3(lattice.lx, lattice.ly, lattice.lz));
+  return new THREE.Quaternion().setFromRotationMatrix(m);
 }
 
-const mirrorScale = (axis, sign) =>
-  axis === 'x' ? new THREE.Vector3(sign, 1, 1) : new THREE.Vector3(1, 1, sign);
+// The lattice a freshly-mounted cube should hold for a type: identity for
+// proper home poses; for mirrored types, the swap across the home face's
+// in-plane horizontal axis.
+function initialLatticeFor(type) {
+  const { normal, parity } = homeOrientation(type);
+  if (parity === 1) return identityLattice();
+  return composeLattice(DANCES[normal[0] !== 0 ? 'swap-z' : 'swap-x'], identityLattice());
+}
+
+// Rest transforms for every pole under a lattice L: position L(slot), and
+// upside down when L flips y (the flip axis is arbitrary — invisible).
+const Q_INVERT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+function restsForLattice(lattice) {
+  const rests = {};
+  for (const pole of POLES) {
+    rests[pole.key] = {
+      position: new THREE.Vector3(
+        lattice.lx * pole.sx * (POLE_WIDTH / 2), 0, lattice.lz * pole.sz * (POLE_WIDTH / 2),
+      ),
+      quaternion: lattice.ly === 1 ? new THREE.Quaternion() : Q_INVERT.clone(),
+    };
+  }
+  return rests;
+}
 
 // Text that lies in its face's plane but is re-oriented every frame to stay
 // world-upright — and, because its world matrix is rebuilt from an orthonormal
@@ -115,6 +135,8 @@ const _inv = new THREE.Matrix4();
 const _nrm = new THREE.Matrix3();
 
 const _toCam = new THREE.Vector3();
+const _hitN = new THREE.Vector3();
+const _danceQ = new THREE.Quaternion();
 
 function SurfaceLabel({ groupRef, position, normal, visible = true, children }) {
   const ref = useRef();
@@ -241,8 +263,9 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
 
 function Pole({
   pole, geometry, exponent, lineOpacity, shadowDim, shadowSat, blendSides,
-  selectedType, onSelect, onHover, draggingRef,
+  selectedType, onSelect, onHover, draggingRef, latticeRef, registerGroup,
 }) {
+  const localGroupRef = useRef();
   const center = useMemo(
     () => new THREE.Vector3(pole.sx * POLE_WIDTH / 2, 0, pole.sz * POLE_WIDTH / 2),
     [pole],
@@ -283,19 +306,27 @@ function Pole({
     u.blendSides.value = blendSides ? 1 : 0;
   }, [shading, blendSides, material]);
 
-  // The cube face this event's surface belongs to — null for caps, and for
-  // rounded regions facing another pole (grooves), which don't select.
+  // The semantic cube face this event's surface belongs to — null for caps,
+  // and for rounded regions facing another pole (grooves), which don't
+  // select. The hit normal is geometry-local; the pole's own transform maps
+  // it to cube-local, and the lattice maps that to semantic space, where
+  // the pole always sits at its own slot.
   const hitSideFace = (e) => {
     const n = e.face?.normal;
     if (!n) return null;
-    if (Math.abs(n.y) >= Math.max(Math.abs(n.x), Math.abs(n.z))) return null;
-    const axis = Math.abs(n.x) >= Math.abs(n.z) ? 0 : 2;
-    const sign = Math.sign(axis === 0 ? n.x : n.z);
+    const L = latticeRef.current;
+    _hitN.copy(n).applyQuaternion(localGroupRef.current.quaternion);
+    _hitN.set(L.lx * _hitN.x, L.ly * _hitN.y, L.lz * _hitN.z);
+    if (Math.abs(_hitN.y) >= Math.max(Math.abs(_hitN.x), Math.abs(_hitN.z))) return null;
+    const axis = Math.abs(_hitN.x) >= Math.abs(_hitN.z) ? 0 : 2;
+    const sign = Math.sign(axis === 0 ? _hitN.x : _hitN.z);
     if (sign !== (axis === 0 ? pole.sx : pole.sz)) return null;
     return FACES.find(f => f.normal[axis] === sign);
   };
 
   // The type whose quadrant this event's surface point belongs to, if any.
+  // The octant test lives in geometry space: the pole's own top half is
+  // always its top function, however the pole is placed.
   const typeAt = (e) => {
     const face = hitSideFace(e);
     if (!face) return null;
@@ -342,7 +373,10 @@ function Pole({
   }, [exponent]);
 
   return (
-    <group position={center}>
+    <group
+      position={center}
+      ref={(g) => { localGroupRef.current = g; registerGroup(pole.key, g); }}
+    >
       <mesh
         geometry={geometry}
         material={material}
@@ -369,8 +403,11 @@ function Pole({
 // Each quadrant labels its function with the selected type's rank as a
 // subscript (stack 1–4, shadow 5–8), plus the type badge, shown only for
 // the selected type or while the quadrant is hovered.
-function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }) {
+function FaceAnnotations({ face, exponent, selectedType, hoveredType, lattice, groupRef }) {
   const frame = useFaceFrame(face);
+  // labels live where the lattice has physically put the poles
+  const mapL = v => new THREE.Vector3(lattice.lx * v.x, lattice.ly * v.y, lattice.lz * v.z);
+  const mappedNormal = mapL(frame.normal);
 
   return (
     <group>
@@ -381,16 +418,16 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
           <group key={key}>
             <SurfaceLabel
               groupRef={groupRef}
-              position={towardCorner(face, frame, corner, 0.5, 0.02, exponent)}
-              normal={frame.normal}
+              position={mapL(towardCorner(face, frame, corner, 0.5, 0.02, exponent))}
+              normal={mappedNormal}
             >
               <FnRankLabel fn={fn} rank={functionRank(selectedType, fn)} />
             </SurfaceLabel>
             {type && (
               <SurfaceLabel
                 groupRef={groupRef}
-                position={towardCorner(face, frame, corner, 0.72, 0.06, exponent)}
-                normal={frame.normal}
+                position={mapL(towardCorner(face, frame, corner, 0.72, 0.06, exponent))}
+                normal={mappedNormal}
                 visible={type === selectedType || type === hoveredType}
               >
                 <Text
@@ -414,17 +451,28 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
 }
 
 function CubeScene({
-  selectedType, setSelectedType, initialYaw, spin,
+  selectedType, setSelectedType, initialYaw, spin, swapStyle,
   exponent, lineOpacity, shadowDim, shadowSat, blendSides,
 }) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
   const [hoveredType, setHoveredType] = useState(null);
   const draggingRef = useRef(false);
-  const poseAxisRef = useRef('x'); // cube-local axis any mirror currently lives on
   const animRef = useRef(null);
   const mountedRef = useRef(false);
   const { gl, camera } = useThree();
+
+  // The lattice: which reflection the pole arrangement currently realizes.
+  // State for the labels/interaction, a ref for the frame loop and handlers.
+  const [lattice, setLattice] = useState(() =>
+    initialYaw !== null ? identityLattice() : initialLatticeFor(selectedType));
+  const latticeRef = useRef(lattice);
+  const restsRef = useRef(restsForLattice(lattice));
+  const poleGroupsRef = useRef({});
+  const swapStyleRef = useRef(swapStyle);
+  swapStyleRef.current = swapStyle;
+
+  const registerGroup = (key, g) => { poleGroupsRef.current[key] = g; };
 
   // Initial pose: explicit yaw if given, else snap to the selected type's home.
   useLayoutEffect(() => {
@@ -432,37 +480,80 @@ function CubeScene({
     if (initialYaw !== null) {
       g.quaternion.setFromAxisAngle(UP, initialYaw);
     } else {
-      const { q, sign, axis } = homePose(selectedType, camera);
-      g.quaternion.copy(q);
-      g.scale.copy(mirrorScale(axis, sign));
-      poseAxisRef.current = axis;
+      g.quaternion.copy(homePoseQuat(selectedType, camera, latticeRef.current));
     }
   }, []);
 
-  // Selection → glide (and, when chirality differs, flip) to the home pose.
+  // Selection → plan the transition: one proper slerp, plus at most one
+  // dance when the target parity differs from the lattice's. The dance is
+  // whichever of {swap-x, swap-z, flip} leaves the smallest residual
+  // rotation for the slerp.
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     const g = groupRef.current;
-    const target = homePose(selectedType, camera);
-    const fromQ = g.quaternion.clone();
-    const fromScale = g.scale.clone();
 
-    let axis = target.sign === -1 ? target.axis : poseAxisRef.current;
-    if (axis !== poseAxisRef.current) {
-      const curSign = poseAxisRef.current === 'x' ? g.scale.x : g.scale.z;
-      if (curSign === -1) {
-        // same world transform, mirror re-expressed on the new axis
-        fromQ.multiply(FLIP_XZ);
-        fromScale.copy(mirrorScale(axis, -1));
-      }
-      // mid-flip cross-axis retargets fall through to a plain component lerp
+    // a retargeted mid-dance transition snap-finishes the previous dance
+    if (animRef.current?.dance) {
+      restsRef.current = animRef.current.dance.toRests;
     }
-    poseAxisRef.current = axis;
-    animRef.current = {
-      fromQ, toQ: target.q,
-      fromScale, toScale: mirrorScale(axis, target.sign),
-      t: 0,
-    };
+
+    const parity = homeOrientation(selectedType).parity;
+    let L = latticeRef.current;
+    let dance = null;
+
+    if (parity !== latticeDet(L)) {
+      let best = null;
+      for (const name of ['swap-x', 'swap-z', 'flip']) {
+        const Lc = composeLattice(DANCES[name], L);
+        const q = homePoseQuat(selectedType, camera, Lc);
+        const angle = q.angleTo(g.quaternion);
+        if (!best || angle < best.angle) best = { name, Lc, q, angle };
+      }
+      L = best.Lc;
+
+      const fromRests = {};
+      const toRests = {};
+      const isFlip = best.name === 'flip';
+      // flip splits along the target face's in-plane horizontal axis and
+      // turns about the face-normal axis — the user-facing left/right split
+      const faceNormal = homeOrientation(selectedType).normal;
+      const axis = isFlip
+        ? (faceNormal[0] !== 0 ? 'z' : 'x')
+        : (best.name === 'swap-x' ? 'x' : 'z');
+      const turnAxis = isFlip
+        ? new THREE.Vector3(Math.abs(faceNormal[0]), 0, Math.abs(faceNormal[2]))
+        : null;
+      const bulgeAxis = axis === 'x' ? 'z' : 'x';
+      for (const pole of POLES) {
+        const from = restsRef.current[pole.key];
+        fromRests[pole.key] = {
+          position: from.position.clone(),
+          quaternion: from.quaternion.clone(),
+        };
+        const p = from.position.clone();
+        const q = from.quaternion.clone();
+        if (isFlip) q.premultiply(new THREE.Quaternion().setFromAxisAngle(turnAxis, Math.PI));
+        else p[axis] *= -1;
+        toRests[pole.key] = { position: p, quaternion: q };
+      }
+      // the hop must rise in world-up terms, whichever way the cube hangs
+      const localUp = UP.clone().applyQuaternion(g.quaternion.clone().invert());
+      dance = {
+        kind: isFlip ? 'flip' : swapStyleRef.current,
+        axis, bulgeAxis, turnAxis, fromRests, toRests,
+        hopSign: Math.sign(localUp.y) || 1,
+      };
+      latticeRef.current = L;
+      setLattice(L);
+      animRef.current = { fromQ: g.quaternion.clone(), toQ: best.q, t: 0, dance };
+    } else {
+      animRef.current = {
+        fromQ: g.quaternion.clone(),
+        toQ: homePoseQuat(selectedType, camera, L),
+        t: 0,
+        dance: null,
+      };
+    }
   }, [selectedType, camera]);
 
   // Drag detection on the canvas itself, so orbiting never triggers a select.
@@ -489,6 +580,44 @@ function CubeScene({
     };
   }, [gl]);
 
+  // Cube-local pole transforms for one dance frame, driven by the pure lanes.
+  const applyDance = (dance, t) => {
+    for (const pole of POLES) {
+      const pg = poleGroupsRef.current[pole.key];
+      const from = dance.fromRests[pole.key];
+      if (!pg || !from) continue;
+      const s = Math.sign(from.position[dance.axis]);
+      pg.position.copy(from.position);
+      if (dance.kind === 'flip') {
+        const { c, theta } = flipPose(t);
+        pg.position[dance.axis] = s * c;
+        _danceQ.setFromAxisAngle(dance.turnAxis, theta);
+        pg.quaternion.copy(_danceQ).multiply(from.quaternion);
+      } else if (dance.kind === 'hop') {
+        const { hopper, slider } = swapHopCenters(t);
+        const h = s < 0;
+        pg.position[dance.axis] = h ? hopper.a : slider.a;
+        pg.position.y = h ? dance.hopSign * hopper.y : 0;
+        pg.quaternion.copy(from.quaternion);
+      } else { // orbit
+        const { a, b } = swapOrbitCenter(t);
+        pg.position[dance.axis] = s < 0 ? a : -a;
+        pg.position[dance.bulgeAxis] += s < 0 ? b : -b;
+        pg.quaternion.copy(from.quaternion);
+      }
+    }
+  };
+
+  const applyRests = () => {
+    for (const pole of POLES) {
+      const pg = poleGroupsRef.current[pole.key];
+      const rest = restsRef.current[pole.key];
+      if (!pg || !rest) continue;
+      pg.position.copy(rest.position);
+      pg.quaternion.copy(rest.quaternion);
+    }
+  };
+
   const spinQ = useMemo(() => new THREE.Quaternion(), []);
   useFrame((_, delta) => {
     const g = groupRef.current;
@@ -498,10 +627,15 @@ function CubeScene({
       anim.t = Math.min(1, anim.t + delta / ANIM_SECONDS);
       const e = easeInOut(anim.t);
       g.quaternion.slerpQuaternions(anim.fromQ, anim.toQ, e);
-      g.scale.lerpVectors(anim.fromScale, anim.toScale, e);
-      if (anim.t >= 1) animRef.current = null;
-    } else if (autoRotate) {
-      g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * 0.2));
+      if (anim.dance) applyDance(anim.dance, e);
+      else applyRests();
+      if (anim.t >= 1) {
+        if (anim.dance) restsRef.current = anim.dance.toRests;
+        animRef.current = null;
+      }
+    } else {
+      applyRests();
+      if (autoRotate) g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * 0.2));
     }
   });
 
@@ -534,6 +668,8 @@ function CubeScene({
             onSelect={handleSelect}
             onHover={setHoveredType}
             draggingRef={draggingRef}
+            latticeRef={latticeRef}
+            registerGroup={registerGroup}
           />
         ))}
 
@@ -544,6 +680,7 @@ function CubeScene({
             exponent={exponent}
             selectedType={selectedType}
             hoveredType={hoveredType}
+            lattice={lattice}
             groupRef={groupRef}
           />
         ))}
@@ -564,6 +701,7 @@ function CubeScene({
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
+  swapStyle = 'orbit',
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
@@ -578,6 +716,7 @@ export default function CognitiveCube({
           shadowDim={shadowDim}
           shadowSat={shadowSat}
           blendSides={blendSides}
+          swapStyle={swapStyle}
         />
       </Canvas>
     </div>

@@ -49,12 +49,17 @@ anywhere.
 Selecting a type also glides the cube to that type's **home pose**: its face
 fronting the camera with the stack laid out as the standard grid — dominant
 top-left, auxiliary top-right, tertiary bottom-right, inferior bottom-left.
-Here the cube's chirality becomes visible: for eight of the sixteen types the
-grid layout is the *mirror image* of their face's rest arrangement, so no
-rotation can reach it — the cube flattens through its own face plane and
-re-emerges reflected (INTP↔ENTP is such a pair: Ne top-left for ENTP,
-top-right for INTP). Labels re-orient every frame, so they stay upright and
-un-mirrored throughout.
+Transitions are built from four rigid moves — poles are only ever rotated
+and translated, never scaled, and never intersect. Whole-cube rotations
+(rolls and yaws) merge into a single slerp. When the target's chirality
+differs — for eight of the sixteen types the canonical grid is the *mirror
+image* of their face's rest arrangement, unreachable by rotation — the cube
+splits into its left and right halves for one dance: a **swap**, the two
+halves trading places (orbiting around each other, or one hopping over the
+other — `?swap=`), or a **flip**, both halves turning 180° end-for-end in
+unison, the same direction, staying parallel (INTP↔ENTP swaps; a stack
+reversal like ENTP↔ISFJ flips). Every transition is one slerp plus at most
+one dance. Labels re-orient every frame, so they stay upright throughout.
 
 ## Using it
 
@@ -67,17 +72,19 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
 ```
 
 - **Dropdown** or **click a face quadrant** to select a type — the cube
-  animates to that type's home pose (flipping through the mirror when needed).
+  animates to that type's home pose (dancing the swap or flip when the
+  chirality differs).
 - **Drag** to orbit (auto-rotation stops on first interaction), scroll to zoom.
 - **Hover a quadrant** to reveal its type badge.
 - URL parameters make any view linkable and screenshot-testable:
-  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45&n=7&lines=0.1&dim=0.73&sat=0.9&blend=0`
+  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45&n=7&lines=0.1&dim=0.73&sat=0.9&blend=0&swap=orbit`
   — initial type (the cube starts in its home pose), disable auto-rotation,
   camera position, an explicit cube yaw in degrees (overrides the home
   pose; useful for framing the rest orientation), the superellipsoid
   exponent (default 7), the equator line opacity (default 0.1), the shadow
-  dim and saturation (defaults 0.73 and 0.9), and side-face blending
-  (default 0, hard boundaries).
+  dim and saturation (defaults 0.73 and 0.9), side-face blending
+  (default 0, hard boundaries), and the swap dance path
+  (`orbit`, default, or `hop`).
 
 ## Architecture
 
@@ -97,13 +104,22 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
   counts, pole pairing and per-pole paint directions, rank permutations and
   shadow antipodality, reference colors, canonical home-pose layout, the
   8/8 parity split).
+- `src/lib/choreography.js` — pure transition choreography: the lattice (a
+  diagonal sign map recording which reflection the pole arrangement
+  currently realizes), the three dance generators, and the lane math for
+  the swap (orbit and hop) and the flip, with clearance constants.
+- `src/lib/choreography.test.js` — locks those constants: dense-sampled
+  separating-axis tests prove the halves never intersect on any lane, and
+  the lattice algebra (each dance is a reflection and an involution;
+  swap ∘ flip = roll) is asserted.
 - `src/components/superellipsoid.js` — the pole surface: a subdivided box
   projected radially onto the superellipsoid, with analytic gradient normals.
 - `src/components/CognitiveCube.jsx` — react-three-fiber scene: four
   superellipsoid pole meshes sharing one geometry, one shader (per-pole
   corner gradients blended along the home-face axis, with a touch of baked
-  view-space lighting), interaction, and the pose
-  system — the group's transform is rotation ∘ cube-local mirror, animated by
-  slerping the rotation while the mirror's scale component crosses zero, with
-  labels re-based to world-upright matrices each frame.
+  view-space lighting), interaction, and the transition system — the group
+  is always a proper rotation (one slerp); parity changes are danced by the
+  poles per the planner, which picks whichever of swap-x, swap-z, or flip
+  leaves the smallest residual rotation; labels are re-based to
+  world-upright matrices each frame and mapped through the lattice.
 - `src/components/TypeSelector.jsx`, `src/App.jsx` — UI shell and legend.

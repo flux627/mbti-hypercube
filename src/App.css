@@ -33,6 +33,19 @@ h2 {
   font-size: 16px;
 }
 
+.swap-control {
+  margin-bottom: 14px;
+}
+
+.swap-control label {
+  margin-left: 14px;
+}
+
+.swap-control input {
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
 .legend {
   margin-left: 20px;
 }

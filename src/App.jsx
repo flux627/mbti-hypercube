@@ -30,6 +30,8 @@ const shadowSat = params.has('sat') && Number.isFinite(satParam)
 // blend: 1 blends the side faces front-to-back instead of keeping the
 // hard pole boundaries
 const blendSides = params.get('blend') === '1';
+// swap: choreography of the half-cube swap dance
+const initialSwapStyle = params.get('swap') === 'hop' ? 'hop' : 'orbit';
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -42,12 +44,14 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
+  const [swapStyle, setSwapStyle] = useState(initialSwapStyle);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
+    url.searchParams.set('swap', swapStyle);
     window.history.replaceState(null, '', url);
-  }, [selectedType]);
+  }, [selectedType, swapStyle]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -78,6 +82,28 @@ function App() {
         </span>
       </div>
 
+      <div className="swap-control">
+        <b>Swap path:</b>
+        <label>
+          <input
+            type="radio"
+            name="swapStyle"
+            checked={swapStyle === 'orbit'}
+            onChange={() => setSwapStyle('orbit')}
+          />
+          orbit
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="swapStyle"
+            checked={swapStyle === 'hop'}
+            onChange={() => setSwapStyle('hop')}
+          />
+          hop over
+        </label>
+      </div>
+
       <CognitiveCube
         selectedType={selectedType}
         setSelectedType={setSelectedType}
@@ -89,6 +115,7 @@ function App() {
         shadowDim={shadowDim}
         shadowSat={shadowSat}
         blendSides={blendSides}
+        swapStyle={swapStyle}
       />
     </div>
   );
