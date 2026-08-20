@@ -30,7 +30,11 @@ function poleExtent(lt, y, exponent) {
   return (POLE_WIDTH / 2) * Math.max(rest, 1e-4) ** (1 / exponent);
 }
 const UP = new THREE.Vector3(0, 1, 0);
-const ANIM_SECONDS = 1.1;
+const DEFAULT_ANIM_SECONDS = 1.1;
+// The transition clock, adjustable via the ?dur= URL param (slow-motion
+// review); every animated quantity — slerp, dance lanes, color crossfade —
+// shares it.
+export const animClock = { seconds: DEFAULT_ANIM_SECONDS };
 const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 const poleVertexShader = /* glsl */ `
@@ -341,7 +345,7 @@ function Pole({
   useFrame((_, delta) => {
     const a = colorAnimRef.current;
     if (!a) return;
-    a.t = Math.min(1, a.t + delta / ANIM_SECONDS);
+    a.t = Math.min(1, a.t + delta / animClock.seconds);
     const e = easeInOut(a.t);
     const u = material.uniforms;
     u.nearTop.value.lerpColors(a.from.nearTop, a.to.nearTop, e);
@@ -687,7 +691,7 @@ function CubeScene({
     if (!g) return;
     const anim = animRef.current;
     if (anim) {
-      anim.t = Math.min(1, anim.t + delta / ANIM_SECONDS);
+      anim.t = Math.min(1, anim.t + delta / animClock.seconds);
       const e = easeInOut(anim.t);
       g.quaternion.slerpQuaternions(anim.fromQ, anim.toQ, e);
       // lanes carry their own timing — play them on the linear clock

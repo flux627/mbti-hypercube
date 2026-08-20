@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import TypeSelector from './components/TypeSelector';
-import CognitiveCube, { EXPONENT_MIN, EXPONENT_MAX } from './components/CognitiveCube';
+import CognitiveCube, { EXPONENT_MIN, EXPONENT_MAX, animClock } from './components/CognitiveCube';
 import { TYPE_STACKS, RANK_COLORS, RANK_NAMES } from './lib/cubeModel.js';
 import './App.css';
 
@@ -37,6 +37,11 @@ const initialSwapStyle = SWAP_STYLES.includes(params.get('swap'))
   : 'orbit';
 // flip: hand-authored or least-action flip lane
 const initialFlipStyle = params.get('flip') === 'action' ? 'action' : 'hand';
+// dur: transition duration in seconds (slow-motion review)
+const durParam = Number(params.get('dur'));
+if (params.has('dur') && Number.isFinite(durParam)) {
+  animClock.seconds = Math.min(20, Math.max(0.2, durParam));
+}
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
