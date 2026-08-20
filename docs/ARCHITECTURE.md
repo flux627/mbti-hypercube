@@ -156,7 +156,10 @@ Findings (jerk cost, lower = less action):
 `sat=` (0.9) · `blend=` (0) · `swap=` orbit|hop|planar|vertical|action-hop
 (orbit) · `flip=` hand|action (hand) · `dur=` transition seconds (1.1,
 slow-motion review) · `ease=cubic` (old easing profile, A/B review) ·
-`plan=residual` (legacy smallest-residual planner, A/B review).
+`plan=residual` (legacy smallest-residual planner, A/B review) ·
+`dance=swap-x|swap-z|flip`, `db=±1` (orbit side), `dy=±1` (over/under,
+flip turn), `dd=±1` (rotation direction) — review overrides restricting
+the planner's candidates; an override matching no candidate is ignored.
 
 ## Dev workflow
 

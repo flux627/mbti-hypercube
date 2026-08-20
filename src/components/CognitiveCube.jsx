@@ -158,8 +158,19 @@ const _halfOff = new THREE.Vector3();
 // 180°, each rotation direction) by the world motion of the composite it
 // would produce; 'residual' is the legacy smallest-residual-angle rule,
 // kept for A/B comparison via ?plan=residual.
-const PLAN_MODE = new URLSearchParams(window.location.search).get('plan') === 'residual'
-  ? 'residual' : 'motion';
+const _params = new URLSearchParams(window.location.search);
+const PLAN_MODE = _params.get('plan') === 'residual' ? 'residual' : 'motion';
+// Review overrides restricting the planner's candidate set: ?dance= pins
+// the generator, ?db= the orbit side, ?dy= the over/under or flip-turn
+// direction, ?dd= the rotation direction (1 or -1 each). An override that
+// matches no candidate is ignored.
+const _sign = v => (v === '-1' ? -1 : v === '1' ? 1 : null);
+const FORCE = {
+  dance: ['swap-x', 'swap-z', 'flip'].includes(_params.get('dance')) ? _params.get('dance') : null,
+  b: _sign(_params.get('db')),
+  y: _sign(_params.get('dy')),
+  dir: _sign(_params.get('dd')),
+};
 
 // The residual rotation from one orientation to another, as axis + angle
 // (the w >= 0 representative, so angle is the short way in [0, pi]).
@@ -689,14 +700,21 @@ function CubeScene({
           }
         }
       }
+      let pool = candidates.filter(c =>
+        (!FORCE.dance || c.name === FORCE.dance)
+        && (FORCE.b === null || c.bulgeSign === FORCE.b)
+        && (FORCE.y === null || c.ySign === FORCE.y)
+        && (FORCE.dir === null || c.angle === 0 || Math.sign(c.angle) === FORCE.dir));
+      if (!pool.length) pool = candidates;
       let best = null;
-      for (const c of candidates) {
+      for (const c of pool) {
         if (PLAN_MODE === 'residual' && !c.legacy) continue;
         const better = !best || (PLAN_MODE === 'motion'
           ? c.motion < best.motion - 1e-9
           : Math.abs(c.angle) < Math.abs(best.angle) - 1e-9);
         if (better) best = c;
       }
+      if (!best) best = pool[0];
       window.__lastPlan = {
         mode: PLAN_MODE,
         target: selectedType,
