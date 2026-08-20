@@ -235,12 +235,17 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
   return p;
 }
 
-function Pole({ pole, geometry, exponent, lineOpacity, selectedType, onSelect, onHover, draggingRef }) {
+function Pole({
+  pole, geometry, exponent, lineOpacity, shadowDim, selectedType, onSelect, onHover, draggingRef,
+}) {
   const center = useMemo(
     () => new THREE.Vector3(pole.sx * POLE_WIDTH / 2, 0, pole.sz * POLE_WIDTH / 2),
     [pole],
   );
-  const shading = useMemo(() => poleShading(pole, selectedType), [pole, selectedType]);
+  const shading = useMemo(
+    () => poleShading(pole, selectedType, shadowDim),
+    [pole, selectedType, shadowDim],
+  );
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     vertexShader: poleVertexShader,
@@ -399,7 +404,9 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
   );
 }
 
-function CubeScene({ selectedType, setSelectedType, initialYaw, spin, exponent, lineOpacity }) {
+function CubeScene({
+  selectedType, setSelectedType, initialYaw, spin, exponent, lineOpacity, shadowDim,
+}) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
   const [hoveredType, setHoveredType] = useState(null);
@@ -510,6 +517,7 @@ function CubeScene({ selectedType, setSelectedType, initialYaw, spin, exponent, 
             geometry={poleGeometry}
             exponent={exponent}
             lineOpacity={lineOpacity}
+            shadowDim={shadowDim}
             selectedType={selectedType}
             onSelect={handleSelect}
             onHover={setHoveredType}
@@ -543,7 +551,7 @@ function CubeScene({ selectedType, setSelectedType, initialYaw, spin, exponent, 
 
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
-  exponent = 7, lineOpacity = 0.1,
+  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3,
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
@@ -555,6 +563,7 @@ export default function CognitiveCube({
           spin={spin}
           exponent={exponent}
           lineOpacity={lineOpacity}
+          shadowDim={shadowDim}
         />
       </Canvas>
     </div>

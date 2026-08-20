@@ -144,11 +144,11 @@ function dim(hex, f) {
 
 // The color of any corner for a type: the stack's rank colors 1–4 at full
 // strength, their shadows 5–8 dimmed.
-export function cornerColor(type, fn) {
+export function cornerColor(type, fn, dimFactor = SHADOW_DIM) {
   const rank = functionRank(type, fn);
   return rank <= 4
     ? RANK_COLORS[rank - 1]
-    : dim(RANK_COLORS[rank - 5], SHADOW_DIM);
+    : dim(RANK_COLORS[rank - 5], dimFactor);
 }
 
 // What a pole displays for the selected type. Every corner has a color
@@ -160,7 +160,7 @@ export function cornerColor(type, fn) {
 // perpendicular sign return the same near/far colors, keeping the field
 // continuous across the groove between them; the split perpendicular to
 // dirFace stays hard, carried by the pole boundaries themselves.
-export function poleShading(pole, type) {
+export function poleShading(pole, type, dimFactor = SHADOW_DIM) {
   const dirFace = homeOrientation(type).normal;
   // this pole's partner across the blend axis: same perpendicular sign
   const partner = POLES.find(p =>
@@ -168,10 +168,10 @@ export function poleShading(pole, type) {
   const isNear = (dirFace[0] !== 0 ? pole.sx * dirFace[0] : pole.sz * dirFace[2]) > 0;
   const [near, far] = isNear ? [pole, partner] : [partner, pole];
   return {
-    nearTop: cornerColor(type, near.top),
-    nearBottom: cornerColor(type, near.bottom),
-    farTop: cornerColor(type, far.top),
-    farBottom: cornerColor(type, far.bottom),
+    nearTop: cornerColor(type, near.top, dimFactor),
+    nearBottom: cornerColor(type, near.bottom, dimFactor),
+    farTop: cornerColor(type, far.top, dimFactor),
+    farBottom: cornerColor(type, far.bottom, dimFactor),
     dirFace,
   };
 }

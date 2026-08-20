@@ -17,6 +17,11 @@ const linesParam = Number(params.get('lines'));
 const lineOpacity = params.has('lines') && Number.isFinite(linesParam)
   ? Math.min(Math.max(linesParam, 0), 1)
   : 0.1;
+// dim: shadow-pole brightness relative to the stack colors
+const dimParam = Number(params.get('dim'));
+const initialShadowDim = params.has('dim') && Number.isFinite(dimParam)
+  ? Math.min(Math.max(dimParam, 0), 1)
+  : 0.3;
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -29,12 +34,14 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
+  const [shadowDim, setShadowDim] = useState(initialShadowDim);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
+    url.searchParams.set('dim', String(shadowDim));
     window.history.replaceState(null, '', url);
-  }, [selectedType]);
+  }, [selectedType, shadowDim]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -66,6 +73,20 @@ function App() {
         </span>
       </div>
 
+      <div className="dim-control">
+        <label htmlFor="dimSlider"><b>Shadow dim:</b></label>
+        <input
+          id="dimSlider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={shadowDim}
+          onChange={e => setShadowDim(Number(e.target.value))}
+        />
+        <span className="dim-value">{shadowDim.toFixed(2)}</span>
+      </div>
+
       <CognitiveCube
         selectedType={selectedType}
         setSelectedType={setSelectedType}
@@ -74,6 +95,7 @@ function App() {
         cameraPosition={initialCamera}
         exponent={exponent}
         lineOpacity={lineOpacity}
+        shadowDim={shadowDim}
       />
     </div>
   );

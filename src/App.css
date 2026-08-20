@@ -33,6 +33,25 @@ h2 {
   font-size: 16px;
 }
 
+.dim-control {
+  margin-bottom: 14px;
+}
+
+.dim-control label {
+  margin-right: 8px;
+}
+
+.dim-control input[type="range"] {
+  width: 220px;
+  vertical-align: middle;
+}
+
+.dim-value {
+  margin-left: 8px;
+  color: #444;
+  font-variant-numeric: tabular-nums;
+}
+
 .legend {
   margin-left: 20px;
 }
