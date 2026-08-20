@@ -42,6 +42,12 @@ const durParam = Number(params.get('dur'));
 if (params.has('dur') && Number.isFinite(durParam)) {
   animClock.seconds = Math.min(20, Math.max(0.2, durParam));
 }
+// bare: render only the cube, no page chrome (for the explorer iframe)
+const bare = params.get('bare') === '1';
+// to/play: auto-play a transition after load — the cube starts at ?type=
+// and selects ?to= after ?play= milliseconds (explorer support)
+const autoTo = TYPE_STACKS[params.get('to')] ? params.get('to') : null;
+const autoDelay = Number(params.get('play')) || 2500;
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -65,7 +71,39 @@ function App() {
     window.history.replaceState(null, '', url);
   }, [selectedType, swapStyle, flipStyle]);
 
+  useEffect(() => {
+    if (!autoTo) return undefined;
+    const id = setTimeout(() => setSelectedType(autoTo), autoDelay);
+    return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    if (bare) {
+      document.body.style.background = '#0a0a0a';
+      document.body.style.margin = '0';
+    }
+  }, []);
+
   const stack = TYPE_STACKS[selectedType];
+
+  if (bare) {
+    return (
+      <CognitiveCube
+        selectedType={selectedType}
+        setSelectedType={setSelectedType}
+        initialYaw={initialYaw}
+        spin={initialSpin}
+        cameraPosition={initialCamera}
+        exponent={exponent}
+        lineOpacity={lineOpacity}
+        shadowDim={shadowDim}
+        shadowSat={shadowSat}
+        blendSides={blendSides}
+        swapStyle={swapStyle}
+        flipStyle={flipStyle}
+      />
+    );
+  }
 
   return (
     <div className="app">
