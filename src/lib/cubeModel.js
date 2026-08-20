@@ -173,6 +173,9 @@ export function poleShading(pole, type, dimFactor = SHADOW_DIM) {
     farTop: cornerColor(type, far.top, dimFactor),
     farBottom: cornerColor(type, far.bottom, dimFactor),
     dirFace,
+    // whether this pole is the near one — lets the renderer snap the pole
+    // to its own gradient when side-face blending is off
+    isNear,
   };
 }
 

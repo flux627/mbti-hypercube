@@ -22,6 +22,8 @@ const dimParam = Number(params.get('dim'));
 const initialShadowDim = params.has('dim') && Number.isFinite(dimParam)
   ? Math.min(Math.max(dimParam, 0), 1)
   : 0.3;
+// blend: 0 keeps hard pole boundaries on the side faces instead of blending
+const initialBlendSides = params.get('blend') !== '0';
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -35,13 +37,15 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
   const [shadowDim, setShadowDim] = useState(initialShadowDim);
+  const [blendSides, setBlendSides] = useState(initialBlendSides);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
     url.searchParams.set('dim', String(shadowDim));
+    url.searchParams.set('blend', blendSides ? '1' : '0');
     window.history.replaceState(null, '', url);
-  }, [selectedType, shadowDim]);
+  }, [selectedType, shadowDim, blendSides]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -85,6 +89,14 @@ function App() {
           onChange={e => setShadowDim(Number(e.target.value))}
         />
         <span className="dim-value">{shadowDim.toFixed(2)}</span>
+        <label className="blend-toggle">
+          <input
+            type="checkbox"
+            checked={blendSides}
+            onChange={e => setBlendSides(e.target.checked)}
+          />
+          <b>Blend side faces</b>
+        </label>
       </div>
 
       <CognitiveCube
@@ -96,6 +108,7 @@ function App() {
         exponent={exponent}
         lineOpacity={lineOpacity}
         shadowDim={shadowDim}
+        blendSides={blendSides}
       />
     </div>
   );

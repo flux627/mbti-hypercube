@@ -52,6 +52,8 @@ const poleFragmentShader = /* glsl */ `
   uniform vec3 nearTop, nearBottom, farTop, farBottom;
   uniform vec3 dirFace;
   uniform float halfHeight, halfSpan;
+  uniform float blendSides;  // 1 = blend across side faces, 0 = hard boundaries
+  uniform float ownWeight;   // 1 if this pole is on the home-face side
   varying vec3 vPos;
   varying vec3 vViewNormal;
   void main() {
@@ -59,6 +61,8 @@ const poleFragmentShader = /* glsl */ `
     vec3 nearC = mix(nearBottom, nearTop, ty);
     vec3 farC = mix(farBottom, farTop, ty);
     float w = clamp((dot(vPos, dirFace) / halfSpan + 1.0) * 0.5, 0.0, 1.0);
+    // hard boundaries: the pole shows its own gradient at full strength
+    w = mix(ownWeight, w, blendSides);
     vec3 color = mix(farC, nearC, w);
 
     vec3 n = normalize(vViewNormal);
@@ -236,7 +240,8 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
 }
 
 function Pole({
-  pole, geometry, exponent, lineOpacity, shadowDim, selectedType, onSelect, onHover, draggingRef,
+  pole, geometry, exponent, lineOpacity, shadowDim, blendSides,
+  selectedType, onSelect, onHover, draggingRef,
 }) {
   const center = useMemo(
     () => new THREE.Vector3(pole.sx * POLE_WIDTH / 2, 0, pole.sz * POLE_WIDTH / 2),
@@ -259,6 +264,8 @@ function Pole({
       poleCenter: { value: center.clone() },
       halfHeight: { value: POLE_HEIGHT / 2 },
       halfSpan: { value: SCALE },
+      blendSides: { value: 1 },
+      ownWeight: { value: 1 },
     },
     side: THREE.DoubleSide,
   }), [center]);
@@ -272,7 +279,9 @@ function Pole({
     u.farTop.value.set(shading.farTop);
     u.farBottom.value.set(shading.farBottom);
     u.dirFace.value.set(...shading.dirFace);
-  }, [shading, material]);
+    u.ownWeight.value = shading.isNear ? 1 : 0;
+    u.blendSides.value = blendSides ? 1 : 0;
+  }, [shading, blendSides, material]);
 
   // The cube face this event's surface belongs to — null for caps, and for
   // rounded regions facing another pole (grooves), which don't select.
@@ -405,7 +414,7 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
 }
 
 function CubeScene({
-  selectedType, setSelectedType, initialYaw, spin, exponent, lineOpacity, shadowDim,
+  selectedType, setSelectedType, initialYaw, spin, exponent, lineOpacity, shadowDim, blendSides,
 }) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
@@ -518,6 +527,7 @@ function CubeScene({
             exponent={exponent}
             lineOpacity={lineOpacity}
             shadowDim={shadowDim}
+            blendSides={blendSides}
             selectedType={selectedType}
             onSelect={handleSelect}
             onHover={setHoveredType}
@@ -551,7 +561,7 @@ function CubeScene({
 
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
-  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3,
+  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3, blendSides = true,
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
@@ -564,6 +574,7 @@ export default function CognitiveCube({
           exponent={exponent}
           lineOpacity={lineOpacity}
           shadowDim={shadowDim}
+          blendSides={blendSides}
         />
       </Canvas>
     </div>

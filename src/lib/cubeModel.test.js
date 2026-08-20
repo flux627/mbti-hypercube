@@ -188,11 +188,18 @@ for (const t of types) {
     const own = isNear ? ['nearTop', 'nearBottom'] : ['farTop', 'farBottom'];
     assert.equal(sh[own[0]], cornerColor(t, p.top), `${t}/${p.key} own top`);
     assert.equal(sh[own[1]], cornerColor(t, p.bottom), `${t}/${p.key} own bottom`);
+    assert.equal(sh.isNear, isNear, `${t}/${p.key} isNear`);
     // the pole across the blend axis shares the same field, so the color
     // is continuous through the groove between them
     const partner = POLES.find(q =>
       q !== p && (normal[0] !== 0 ? q.sz === p.sz : q.sx === p.sx));
-    assert.deepEqual(poleShading(partner, t), sh, `${t}/${p.key} continuous pair`);
+    const psh = poleShading(partner, t);
+    assert.deepEqual(
+      { ...psh, isNear: sh.isNear },
+      sh,
+      `${t}/${p.key} continuous pair`,
+    );
+    assert.equal(psh.isNear, !sh.isNear, `${t}/${p.key} partner side`);
   }
 }
 
@@ -205,12 +212,14 @@ for (const t of types) {
     nearTop: '#ff0000', nearBottom: '#0000ff',
     farTop: dimHex('#00aeff'), farBottom: dimHex('#ff8a00'),
     dirFace: [-1, 0, 0],
+    isNear: true,
   });
   const siNe = poleShading(POLES.find(p => p.top === 'Si'), 'INFJ');
   assert.deepEqual(siNe, {
     nearTop: '#ff8a00', nearBottom: '#00aeff',
     farTop: dimHex('#0000ff'), farBottom: dimHex('#ff0000'),
     dirFace: [-1, 0, 0],
+    isNear: false,
   });
 }
 
