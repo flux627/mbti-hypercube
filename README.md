@@ -83,8 +83,9 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
   pose; useful for framing the rest orientation), the superellipsoid
   exponent (default 7), the equator line opacity (default 0.1), the shadow
   dim and saturation (defaults 0.73 and 0.9), side-face blending
-  (default 0, hard boundaries), and the swap dance path
-  (`orbit`, default, or `hop`).
+  (default 0, hard boundaries), the swap dance lane (`orbit` default,
+  `hop`, `planar`, `vertical`, `action-hop`), and the flip lane
+  (`hand` default, `action`).
 
 ## Architecture
 
