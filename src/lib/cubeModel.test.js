@@ -175,6 +175,10 @@ for (const t of types) {
       dimHex(RANK_COLORS[i]),
       `${t} shadow ${i + 5} is dimmed rank ${i + 1}`,
     );
+    // at zero saturation the shadow collapses to its luma gray, still dimmed
+    const gray = cornerColor(t, flipAttitude(s[i]), SHADOW_DIM, 0);
+    const ch = [1, 3, 5].map(k => gray.slice(k, k + 2));
+    assert.ok(ch.every(c => c === ch[0]), `${t} shadow ${i + 5} desaturates to gray`);
   }
 }
 

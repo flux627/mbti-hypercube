@@ -22,6 +22,11 @@ const dimParam = Number(params.get('dim'));
 const initialShadowDim = params.has('dim') && Number.isFinite(dimParam)
   ? Math.min(Math.max(dimParam, 0), 1)
   : 0.3;
+// sat: shadow-pole saturation, 1 = full hue, 0 = gray
+const satParam = Number(params.get('sat'));
+const initialShadowSat = params.has('sat') && Number.isFinite(satParam)
+  ? Math.min(Math.max(satParam, 0), 1)
+  : 1;
 // blend: 0 keeps hard pole boundaries on the side faces instead of blending
 const initialBlendSides = params.get('blend') !== '0';
 // yaw absent → the cube snaps to the selected type's home pose instead
@@ -37,15 +42,17 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
   const [shadowDim, setShadowDim] = useState(initialShadowDim);
+  const [shadowSat, setShadowSat] = useState(initialShadowSat);
   const [blendSides, setBlendSides] = useState(initialBlendSides);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
     url.searchParams.set('dim', String(shadowDim));
+    url.searchParams.set('sat', String(shadowSat));
     url.searchParams.set('blend', blendSides ? '1' : '0');
     window.history.replaceState(null, '', url);
-  }, [selectedType, shadowDim, blendSides]);
+  }, [selectedType, shadowDim, shadowSat, blendSides]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -99,6 +106,20 @@ function App() {
         </label>
       </div>
 
+      <div className="dim-control">
+        <label htmlFor="satSlider"><b>Shadow saturation:</b></label>
+        <input
+          id="satSlider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={shadowSat}
+          onChange={e => setShadowSat(Number(e.target.value))}
+        />
+        <span className="dim-value">{shadowSat.toFixed(2)}</span>
+      </div>
+
       <CognitiveCube
         selectedType={selectedType}
         setSelectedType={setSelectedType}
@@ -108,6 +129,7 @@ function App() {
         exponent={exponent}
         lineOpacity={lineOpacity}
         shadowDim={shadowDim}
+        shadowSat={shadowSat}
         blendSides={blendSides}
       />
     </div>

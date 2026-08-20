@@ -131,24 +131,29 @@ export function typeAtCorner(face, cornerKey) {
   }) || null;
 }
 
-// Shadow corners carry a darkened version of their attitude-partner's rank
-// color: rank 5 dims rank 1's color, 6 dims 2's, 7 dims 3's, 8 dims 4's.
+// Shadow corners carry a darkened, optionally desaturated version of their
+// attitude-partner's rank color: rank 5 shades rank 1's color, 6 shades
+// 2's, 7 shades 3's, 8 shades 4's.
 export const SHADOW_DIM = 0.3;
+export const SHADOW_SAT = 1;
 
-function dim(hex, f) {
+function shade(hex, dimFactor, satFactor) {
   const n = parseInt(hex.slice(1), 16);
-  const scale = v => Math.round(v * f);
-  return '#' + [scale(n >> 16), scale((n >> 8) & 255), scale(n & 255)]
-    .map(v => v.toString(16).padStart(2, '0')).join('');
+  const rgb = [n >> 16, (n >> 8) & 255, n & 255];
+  const luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+  return '#' + rgb
+    .map(v => Math.round((luma + (v - luma) * satFactor) * dimFactor))
+    .map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0'))
+    .join('');
 }
 
 // The color of any corner for a type: the stack's rank colors 1–4 at full
-// strength, their shadows 5–8 dimmed.
-export function cornerColor(type, fn, dimFactor = SHADOW_DIM) {
+// strength, their shadows 5–8 shaded.
+export function cornerColor(type, fn, dimFactor = SHADOW_DIM, satFactor = SHADOW_SAT) {
   const rank = functionRank(type, fn);
   return rank <= 4
     ? RANK_COLORS[rank - 1]
-    : dim(RANK_COLORS[rank - 5], dimFactor);
+    : shade(RANK_COLORS[rank - 5], dimFactor, satFactor);
 }
 
 // What a pole displays for the selected type. Every corner has a color
@@ -160,7 +165,7 @@ export function cornerColor(type, fn, dimFactor = SHADOW_DIM) {
 // perpendicular sign return the same near/far colors, keeping the field
 // continuous across the groove between them; the split perpendicular to
 // dirFace stays hard, carried by the pole boundaries themselves.
-export function poleShading(pole, type, dimFactor = SHADOW_DIM) {
+export function poleShading(pole, type, dimFactor = SHADOW_DIM, satFactor = SHADOW_SAT) {
   const dirFace = homeOrientation(type).normal;
   // this pole's partner across the blend axis: same perpendicular sign
   const partner = POLES.find(p =>
@@ -168,10 +173,10 @@ export function poleShading(pole, type, dimFactor = SHADOW_DIM) {
   const isNear = (dirFace[0] !== 0 ? pole.sx * dirFace[0] : pole.sz * dirFace[2]) > 0;
   const [near, far] = isNear ? [pole, partner] : [partner, pole];
   return {
-    nearTop: cornerColor(type, near.top, dimFactor),
-    nearBottom: cornerColor(type, near.bottom, dimFactor),
-    farTop: cornerColor(type, far.top, dimFactor),
-    farBottom: cornerColor(type, far.bottom, dimFactor),
+    nearTop: cornerColor(type, near.top, dimFactor, satFactor),
+    nearBottom: cornerColor(type, near.bottom, dimFactor, satFactor),
+    farTop: cornerColor(type, far.top, dimFactor, satFactor),
+    farBottom: cornerColor(type, far.bottom, dimFactor, satFactor),
     dirFace,
     // whether this pole is the near one — lets the renderer snap the pole
     // to its own gradient when side-face blending is off

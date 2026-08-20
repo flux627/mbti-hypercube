@@ -240,7 +240,7 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
 }
 
 function Pole({
-  pole, geometry, exponent, lineOpacity, shadowDim, blendSides,
+  pole, geometry, exponent, lineOpacity, shadowDim, shadowSat, blendSides,
   selectedType, onSelect, onHover, draggingRef,
 }) {
   const center = useMemo(
@@ -248,8 +248,8 @@ function Pole({
     [pole],
   );
   const shading = useMemo(
-    () => poleShading(pole, selectedType, shadowDim),
-    [pole, selectedType, shadowDim],
+    () => poleShading(pole, selectedType, shadowDim, shadowSat),
+    [pole, selectedType, shadowDim, shadowSat],
   );
 
   const material = useMemo(() => new THREE.ShaderMaterial({
@@ -414,7 +414,8 @@ function FaceAnnotations({ face, exponent, selectedType, hoveredType, groupRef }
 }
 
 function CubeScene({
-  selectedType, setSelectedType, initialYaw, spin, exponent, lineOpacity, shadowDim, blendSides,
+  selectedType, setSelectedType, initialYaw, spin,
+  exponent, lineOpacity, shadowDim, shadowSat, blendSides,
 }) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
@@ -527,6 +528,7 @@ function CubeScene({
             exponent={exponent}
             lineOpacity={lineOpacity}
             shadowDim={shadowDim}
+            shadowSat={shadowSat}
             blendSides={blendSides}
             selectedType={selectedType}
             onSelect={handleSelect}
@@ -561,7 +563,7 @@ function CubeScene({
 
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
-  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3, blendSides = true,
+  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3, shadowSat = 1, blendSides = true,
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
@@ -574,6 +576,7 @@ export default function CognitiveCube({
           exponent={exponent}
           lineOpacity={lineOpacity}
           shadowDim={shadowDim}
+          shadowSat={shadowSat}
           blendSides={blendSides}
         />
       </Canvas>
