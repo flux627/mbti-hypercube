@@ -164,7 +164,9 @@ const SWAP_LANES = {
 
 function SurfaceLabel({ groupRef, position, normal, visible = true, children }) {
   const ref = useRef();
-  const fadeRef = useRef(visible ? 1 : 0);
+  // starts at 0 so labels fade in on mount — including remapped labels
+  // surfacing on a newly-outward face after a dance
+  const fadeRef = useRef(0);
   useFrame(({ camera }, delta) => {
     const g = groupRef.current;
     const o = ref.current;
@@ -277,6 +279,7 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
 function Pole({
   pole, geometry, exponent, lineOpacity, shadowDim, shadowSat, blendSides,
   selectedType, hoveredType, onSelect, onHover, draggingRef, latticeRef, registerGroup,
+  restsRef, restEpoch,
 }) {
   const localGroupRef = useRef();
   const center = useMemo(
@@ -414,8 +417,29 @@ function Pole({
   // geometry frame, so they stay attached to their quadrants through every
   // dance and slerp (the world-upright re-basing keeps them readable even
   // mid-flip). Each pole carries the labels of its four quadrants — its two
-  // functions on each of its two side faces.
+  // functions on each of its two side faces. Which geometry face carries
+  // them depends on the pole's current rest, not its home slot: a swap
+  // translates a pole to the mirrored slot without rotating it, so the
+  // face that was outward ends up buried in a groove and the opposite face
+  // surfaces. Rest quaternions are always axis→±axis maps (products of π
+  // rotations), so each semantic side face lands on exactly one geometry
+  // face; restEpoch remaps after every dance.
   const labels = useMemo(() => {
+    const rest = restsRef.current[pole.key];
+    const qInv = rest.quaternion.clone().invert();
+    const geoDir = (axis) => {
+      const v = new THREE.Vector3();
+      v[axis] = Math.sign(axis === 'x' ? rest.position.x : rest.position.z) || 1;
+      v.applyQuaternion(qInv);
+      v.set(Math.round(v.x), Math.round(v.y), Math.round(v.z));
+      return v;
+    };
+    const gx = geoDir('x');
+    const gz = geoDir('z');
+    // the pole's footprint quadrant in its own geometry frame
+    const gsx = gx.x !== 0 ? gx.x : gz.x;
+    const gsz = gx.x !== 0 ? gz.z : gx.z;
+    const gCenter = new THREE.Vector3(gsx * POLE_WIDTH / 2, 0, gsz * POLE_WIDTH / 2);
     const out = [];
     for (const face of FACES) {
       if (!face.isSide) continue;
@@ -423,30 +447,33 @@ function Pole({
         ? face.normal[0] === pole.sx
         : face.normal[2] === pole.sz;
       if (!onPole) continue;
-      const frame = { center: new THREE.Vector3(...face.normal).multiplyScalar(SCALE) };
-      const normal = new THREE.Vector3(...face.normal);
-      const a = face.normal[0] !== 0 ? 'x' : 'z';
-      const aSign = Math.sign(face.normal[a === 'x' ? 0 : 2]);
+      const normal = face.normal[0] !== 0 ? gx : gz;
+      const gFace = { normal: [normal.x, 0, normal.z] };
+      const a = normal.x !== 0 ? 'x' : 'z';
+      const aSign = a === 'x' ? normal.x : normal.z;
+      const frame = { center: normal.clone().multiplyScalar(SCALE) };
       for (const fn of [pole.top, pole.bottom]) {
         const cornerKey = Object.keys(face.corners).find(k => face.corners[k] === fn);
-        const corner = new THREE.Vector3(...CORNERS[fn]).multiplyScalar(SCALE);
+        // the pole's top function is at +y in its geometry frame, always
+        const ySign = fn === pole.top ? 1 : -1;
+        const corner = new THREE.Vector3(gsx, ySign, gsz).multiplyScalar(SCALE);
         // badge: horizontally centered on the pole so its placement is
         // invariant under every rearrangement, 72% toward the octant's end
         const badgePos = new THREE.Vector3();
-        badgePos.y = CORNERS[fn][1] * SCALE * 0.72;
+        badgePos.y = ySign * SCALE * 0.72;
         badgePos[a] = aSign * (poleExtent(0, badgePos.y, exponent) + 0.06);
         out.push({
-          key: `${face.key}:${fn}`,
+          key: `${face.key}:${fn}:${a}${aSign}`,
           fn,
           normal,
-          fnPos: towardCorner(face, frame, corner, 0.5, 0.02, exponent).sub(center),
+          fnPos: towardCorner(gFace, frame, corner, 0.5, 0.02, exponent).sub(gCenter),
           badgePos,
           type: typeAtCorner(face, cornerKey),
         });
       }
     }
     return out;
-  }, [pole, exponent, center]);
+  }, [pole, exponent, restEpoch]);
 
   // Equator: the pole's full y = 0 cross-section (a superellipse), one
   // closed loop splitting the pole into its two type octants — the only
@@ -544,6 +571,9 @@ function CubeScene({
   }
   const restsRef = useRef(null);
   if (!restsRef.current) restsRef.current = restsForLattice(latticeRef.current);
+  // bumped whenever restsRef changes, so pole labels remap to the faces
+  // that are outward in the new arrangement
+  const [restEpoch, setRestEpoch] = useState(0);
   const poleGroupsRef = useRef({});
   const swapStyleRef = useRef(swapStyle);
   swapStyleRef.current = swapStyle;
@@ -573,6 +603,7 @@ function CubeScene({
     // a retargeted mid-dance transition snap-finishes the previous dance
     if (animRef.current?.dance) {
       restsRef.current = animRef.current.dance.toRests;
+      setRestEpoch(e => e + 1);
     }
 
     const parity = homeOrientation(selectedType).parity;
@@ -706,7 +737,10 @@ function CubeScene({
       if (anim.dance) applyDance(anim.dance, anim.t);
       else applyRests();
       if (anim.t >= 1) {
-        if (anim.dance) restsRef.current = anim.dance.toRests;
+        if (anim.dance) {
+          restsRef.current = anim.dance.toRests;
+          setRestEpoch(v => v + 1);
+        }
         animRef.current = null;
       }
     } else {
@@ -747,6 +781,8 @@ function CubeScene({
             draggingRef={draggingRef}
             latticeRef={latticeRef}
             registerGroup={registerGroup}
+            restsRef={restsRef}
+            restEpoch={restEpoch}
           />
         ))}
       </group>
