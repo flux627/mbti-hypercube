@@ -89,6 +89,10 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
 
 ## Architecture
 
+The living system map — layers, the transition system, the least-action
+lane findings, dev workflow, and open decisions — is
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). File-by-file:
+
 - `src/data/mbtiData.js` — the 16 stacks and the four function-set groups.
 - `src/lib/cubeModel.js` — pure model, no three.js: corner layout, the six
   faces with canonical UV frames, the four `POLES`, `faceOverlay(face, type)`,
