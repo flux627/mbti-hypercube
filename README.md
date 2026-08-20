@@ -37,13 +37,13 @@ a hovered quadrant; only the selected type's badge stays visible.
 Selecting a type colors every corner by rank —
 <span>1&nbsp;dominant&nbsp;red, 2&nbsp;auxiliary&nbsp;orange,
 3&nbsp;tertiary&nbsp;cyan, 4&nbsp;inferior&nbsp;blue</span>, with the shadow
-corners (5–8, antipodal by construction) carrying the same hues dimmed.
-Each pole is the vertical gradient between its own two corner colors, and
-along the home-face axis the surface blends toward its partner pole's
-gradient: the type's face and its opposite show crisp columns — dom→inf
-beside aux→tert in front, their dimmed shadows behind — while the faces
-between them fade bright→dark, continuously through the grooves. All of it
-is computed from the corner ranks; there is no per-type configuration
+corners (5–8, antipodal by construction) carrying the same hues dimmed and
+slightly desaturated. Each pole is the vertical gradient between its own
+two corner colors at full strength — dom→inf beside aux→tert fronting the
+type's face, their shadow versions behind — with hard color boundaries at
+every groove (`?blend=1` instead fades the side faces bright→dark along
+the home-face axis, continuously through the grooves). All of it is
+computed from the corner ranks; there is no per-type configuration
 anywhere.
 
 Selecting a type also glides the cube to that type's **home pose**: its face
@@ -71,11 +71,13 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
 - **Drag** to orbit (auto-rotation stops on first interaction), scroll to zoom.
 - **Hover a quadrant** to reveal its type badge.
 - URL parameters make any view linkable and screenshot-testable:
-  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45&n=7&lines=0.1`
+  `?type=ENTP&spin=0&cam=5,-5,5&yaw=45&n=7&lines=0.1&dim=0.73&sat=0.9&blend=0`
   — initial type (the cube starts in its home pose), disable auto-rotation,
   camera position, an explicit cube yaw in degrees (overrides the home
   pose; useful for framing the rest orientation), the superellipsoid
-  exponent (default 7), and the equator line opacity (default 0.1).
+  exponent (default 7), the equator line opacity (default 0.1), the shadow
+  dim and saturation (defaults 0.73 and 0.9), and side-face blending
+  (default 0, hard boundaries).
 
 ## Architecture
 

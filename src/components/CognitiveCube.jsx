@@ -563,7 +563,7 @@ function CubeScene({
 
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
-  exponent = 7, lineOpacity = 0.1, shadowDim = 0.3, shadowSat = 1, blendSides = true,
+  exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>

@@ -1,7 +1,7 @@
 // Run with: npm test  (plain node, no framework)
 import assert from 'node:assert/strict';
 import {
-  CORNERS, FACES, CORNER_UVS, POLES, TYPE_STACKS, RANK_COLORS, SHADOW_DIM,
+  CORNERS, FACES, CORNER_UVS, POLES, TYPE_STACKS, RANK_COLORS, SHADOW_DIM, SHADOW_SAT,
   faceOverlay, poleShading, cornerColor, typeAtCorner, homeOrientation,
   flipAttitude, functionRank,
 } from './cubeModel.js';
@@ -162,17 +162,21 @@ for (const p of POLES) {
 }
 
 // Every corner has a color: bright rank colors for the stack, the same hue
-// dimmed by SHADOW_DIM for the shadow at the antipodal corner.
-const dimHex = hex => '#' + [1, 3, 5]
-  .map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * SHADOW_DIM)
-    .toString(16).padStart(2, '0')).join('');
+// shaded by SHADOW_DIM/SHADOW_SAT for the shadow at the antipodal corner.
+const shadeHex = hex => {
+  const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+  return '#' + rgb
+    .map(v => Math.round((luma + (v - luma) * SHADOW_SAT) * SHADOW_DIM))
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+};
 for (const t of types) {
   const s = TYPE_STACKS[t];
   for (let i = 0; i < 4; i++) {
     assert.equal(cornerColor(t, s[i]), RANK_COLORS[i], `${t} rank ${i + 1} color`);
     assert.equal(
       cornerColor(t, flipAttitude(s[i])),
-      dimHex(RANK_COLORS[i]),
+      shadeHex(RANK_COLORS[i]),
       `${t} shadow ${i + 5} is dimmed rank ${i + 1}`,
     );
     // at zero saturation the shadow collapses to its luma gray, still dimmed
@@ -214,14 +218,14 @@ for (const t of types) {
   const niSe = poleShading(POLES.find(p => p.top === 'Ni'), 'INFJ');
   assert.deepEqual(niSe, {
     nearTop: '#ff0000', nearBottom: '#0000ff',
-    farTop: dimHex('#00aeff'), farBottom: dimHex('#ff8a00'),
+    farTop: shadeHex('#00aeff'), farBottom: shadeHex('#ff8a00'),
     dirFace: [-1, 0, 0],
     isNear: true,
   });
   const siNe = poleShading(POLES.find(p => p.top === 'Si'), 'INFJ');
   assert.deepEqual(siNe, {
     nearTop: '#ff8a00', nearBottom: '#00aeff',
-    farTop: dimHex('#0000ff'), farBottom: dimHex('#ff0000'),
+    farTop: shadeHex('#0000ff'), farBottom: shadeHex('#ff0000'),
     dirFace: [-1, 0, 0],
     isNear: false,
   });

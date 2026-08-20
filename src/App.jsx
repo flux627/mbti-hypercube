@@ -19,16 +19,17 @@ const lineOpacity = params.has('lines') && Number.isFinite(linesParam)
   : 0.1;
 // dim: shadow-pole brightness relative to the stack colors
 const dimParam = Number(params.get('dim'));
-const initialShadowDim = params.has('dim') && Number.isFinite(dimParam)
+const shadowDim = params.has('dim') && Number.isFinite(dimParam)
   ? Math.min(Math.max(dimParam, 0), 1)
-  : 0.3;
+  : 0.73;
 // sat: shadow-pole saturation, 1 = full hue, 0 = gray
 const satParam = Number(params.get('sat'));
-const initialShadowSat = params.has('sat') && Number.isFinite(satParam)
+const shadowSat = params.has('sat') && Number.isFinite(satParam)
   ? Math.min(Math.max(satParam, 0), 1)
-  : 1;
-// blend: 0 keeps hard pole boundaries on the side faces instead of blending
-const initialBlendSides = params.get('blend') !== '0';
+  : 0.9;
+// blend: 1 blends the side faces front-to-back instead of keeping the
+// hard pole boundaries
+const blendSides = params.get('blend') === '1';
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -41,18 +42,12 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
-  const [shadowDim, setShadowDim] = useState(initialShadowDim);
-  const [shadowSat, setShadowSat] = useState(initialShadowSat);
-  const [blendSides, setBlendSides] = useState(initialBlendSides);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
-    url.searchParams.set('dim', String(shadowDim));
-    url.searchParams.set('sat', String(shadowSat));
-    url.searchParams.set('blend', blendSides ? '1' : '0');
     window.history.replaceState(null, '', url);
-  }, [selectedType, shadowDim, shadowSat, blendSides]);
+  }, [selectedType]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -67,8 +62,7 @@ function App() {
         function set, each at the corner of its dominant function. Select a type
         (dropdown, or click a quadrant) to paint the cube: one pole runs
         dominant&nbsp;→&nbsp;inferior, the other auxiliary&nbsp;→&nbsp;tertiary,
-        the shadow poles behind carry the same hues dimmed (ranks 5–8), and
-        the side faces blend front to back between them.
+        and the shadow poles behind carry the same hues dimmed (ranks 5–8).
       </p>
 
       <div className="type-selector-container">
@@ -82,42 +76,6 @@ function App() {
             </span>
           ))}
         </span>
-      </div>
-
-      <div className="dim-control">
-        <label htmlFor="dimSlider"><b>Shadow dim:</b></label>
-        <input
-          id="dimSlider"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={shadowDim}
-          onChange={e => setShadowDim(Number(e.target.value))}
-        />
-        <span className="dim-value">{shadowDim.toFixed(2)}</span>
-        <label className="blend-toggle">
-          <input
-            type="checkbox"
-            checked={blendSides}
-            onChange={e => setBlendSides(e.target.checked)}
-          />
-          <b>Blend side faces</b>
-        </label>
-      </div>
-
-      <div className="dim-control">
-        <label htmlFor="satSlider"><b>Shadow saturation:</b></label>
-        <input
-          id="satSlider"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={shadowSat}
-          onChange={e => setShadowSat(Number(e.target.value))}
-        />
-        <span className="dim-value">{shadowSat.toFixed(2)}</span>
       </div>
 
       <CognitiveCube

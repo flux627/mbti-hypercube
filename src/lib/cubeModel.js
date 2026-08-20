@@ -134,8 +134,8 @@ export function typeAtCorner(face, cornerKey) {
 // Shadow corners carry a darkened, optionally desaturated version of their
 // attitude-partner's rank color: rank 5 shades rank 1's color, 6 shades
 // 2's, 7 shades 3's, 8 shades 4's.
-export const SHADOW_DIM = 0.3;
-export const SHADOW_SAT = 1;
+export const SHADOW_DIM = 0.73;
+export const SHADOW_SAT = 0.9;
 
 function shade(hex, dimFactor, satFactor) {
   const n = parseInt(hex.slice(1), 16);
