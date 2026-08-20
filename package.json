@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node src/lib/cubeModel.test.js && node src/lib/choreography.test.js",
+    "lanes": "node scripts/optimize-lanes.mjs",
     "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {

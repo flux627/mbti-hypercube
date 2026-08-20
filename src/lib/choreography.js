@@ -79,3 +79,40 @@ export function flipPose(t) {
     theta: Math.PI * t,
   };
 }
+
+// ── Baked lanes ─────────────────────────────────────────────────────────────
+// The runtime plays dances from baked knot tables (see lanes.generated.js:
+// hand lanes with their easing pre-applied, and least-action lanes computed
+// offline by scripts/optimize-lanes.mjs). Rows are [a, b, y, rot] per half;
+// timing is baked, so sample with a linear clock.
+
+export { LANES } from './lanes.generated.js';
+import { LANES as _LANES } from './lanes.generated.js';
+
+// Catmull-Rom sample of one track at t ∈ [0, 1].
+export function sampleTrack(track, t, out = [0, 0, 0, 0]) {
+  const n = track.length;
+  const x = Math.min(1, Math.max(0, t)) * (n - 1);
+  const lo = Math.min(n - 2, Math.floor(x));
+  const f = x - lo;
+  const row = i => track[Math.min(n - 1, Math.max(0, i))];
+  const p0 = row(lo - 1);
+  const p1 = row(lo);
+  const p2 = row(lo + 1);
+  const p3 = row(lo + 2);
+  for (let k = 0; k < 4; k++) {
+    out[k] = 0.5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * f
+      + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * f * f
+      + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * f * f * f);
+  }
+  return out;
+}
+
+export function sampleLane(name, t, outA, outB) {
+  const lane = _LANES[name];
+  return {
+    rot: lane.rot,
+    A: sampleTrack(lane.A, t, outA),
+    B: sampleTrack(lane.B, t, outB),
+  };
+}

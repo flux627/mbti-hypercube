@@ -7,8 +7,7 @@ import {
   CORNERS, FACES, POLES, functionRank, poleShading, typeAtCorner, homeOrientation,
 } from '../lib/cubeModel.js';
 import {
-  identityLattice, latticeDet, composeLattice, DANCES,
-  swapOrbitCenter, swapHopCenters, flipPose,
+  identityLattice, latticeDet, composeLattice, DANCES, sampleLane,
 } from '../lib/choreography.js';
 
 const SCALE = 1.5;
@@ -137,6 +136,19 @@ const _nrm = new THREE.Matrix3();
 const _toCam = new THREE.Vector3();
 const _hitN = new THREE.Vector3();
 const _danceQ = new THREE.Quaternion();
+const _rowA = [0, 0, 0, 0];
+const _rowB = [0, 0, 0, 0];
+const _halfPos = new THREE.Vector3();
+const _halfOff = new THREE.Vector3();
+
+// UI swap-style values → baked lane names
+const SWAP_LANES = {
+  orbit: 'hand-orbit',
+  hop: 'hand-hop',
+  planar: 'action-planar',
+  vertical: 'action-vertical',
+  'action-hop': 'action-hop',
+};
 
 function SurfaceLabel({ groupRef, position, normal, visible = true, children }) {
   const ref = useRef();
@@ -499,7 +511,7 @@ function Pole({
 }
 
 function CubeScene({
-  selectedType, setSelectedType, initialYaw, spin, swapStyle,
+  selectedType, setSelectedType, initialYaw, spin, swapStyle, flipStyle,
   exponent, lineOpacity, shadowDim, shadowSat, blendSides,
 }) {
   const groupRef = useRef();
@@ -523,6 +535,8 @@ function CubeScene({
   const poleGroupsRef = useRef({});
   const swapStyleRef = useRef(swapStyle);
   swapStyleRef.current = swapStyle;
+  const flipStyleRef = useRef(flipStyle);
+  flipStyleRef.current = flipStyle;
 
   const registerGroup = (key, g) => { poleGroupsRef.current[key] = g; };
 
@@ -572,10 +586,8 @@ function CubeScene({
       const axis = isFlip
         ? (faceNormal[0] !== 0 ? 'z' : 'x')
         : (best.name === 'swap-x' ? 'x' : 'z');
-      const turnAxis = isFlip
-        ? new THREE.Vector3(Math.abs(faceNormal[0]), 0, Math.abs(faceNormal[2]))
-        : null;
       const bulgeAxis = axis === 'x' ? 'z' : 'x';
+      const bulgeVec = new THREE.Vector3(bulgeAxis === 'x' ? 1 : 0, 0, bulgeAxis === 'z' ? 1 : 0);
       for (const pole of POLES) {
         const from = restsRef.current[pole.key];
         fromRests[pole.key] = {
@@ -584,15 +596,17 @@ function CubeScene({
         };
         const p = from.position.clone();
         const q = from.quaternion.clone();
-        if (isFlip) q.premultiply(new THREE.Quaternion().setFromAxisAngle(turnAxis, Math.PI));
+        if (isFlip) q.premultiply(new THREE.Quaternion().setFromAxisAngle(bulgeVec, Math.PI));
         else p[axis] *= -1;
         toRests[pole.key] = { position: p, quaternion: q };
       }
-      // the hop must rise in world-up terms, whichever way the cube hangs
+      // vertical motion must read as world-up, whichever way the cube hangs
       const localUp = UP.clone().applyQuaternion(g.quaternion.clone().invert());
       dance = {
-        kind: isFlip ? 'flip' : swapStyleRef.current,
-        axis, bulgeAxis, turnAxis, fromRests, toRests,
+        lane: isFlip
+          ? (flipStyleRef.current === 'action' ? 'action-flip' : 'hand-flip')
+          : (SWAP_LANES[swapStyleRef.current] || 'hand-orbit'),
+        isFlip, axis, bulgeAxis, bulgeVec, fromRests, toRests,
         hopSign: Math.sign(localUp.y) || 1,
       };
       latticeRef.current = L;
@@ -631,31 +645,29 @@ function CubeScene({
     };
   }, [gl]);
 
-  // Cube-local pole transforms for one dance frame, driven by the pure lanes.
+  // Cube-local pole transforms for one dance frame, driven by the baked
+  // lane tables. A row is the half-center's [a, b, y, rot]; each pole is
+  // its half's center plus its own offset, rotated with the half.
   const applyDance = (dance, t) => {
+    const lane = sampleLane(dance.lane, t, _rowA, _rowB);
     for (const pole of POLES) {
       const pg = poleGroupsRef.current[pole.key];
       const from = dance.fromRests[pole.key];
       if (!pg || !from) continue;
       const s = Math.sign(from.position[dance.axis]);
-      pg.position.copy(from.position);
-      if (dance.kind === 'flip') {
-        const { c, theta } = flipPose(t);
-        pg.position[dance.axis] = s * c;
-        _danceQ.setFromAxisAngle(dance.turnAxis, theta);
-        pg.quaternion.copy(_danceQ).multiply(from.quaternion);
-      } else if (dance.kind === 'hop') {
-        const { hopper, slider } = swapHopCenters(t);
-        const h = s < 0;
-        pg.position[dance.axis] = h ? hopper.a : slider.a;
-        pg.position.y = h ? dance.hopSign * hopper.y : 0;
-        pg.quaternion.copy(from.quaternion);
-      } else { // orbit
-        const { a, b } = swapOrbitCenter(t);
-        pg.position[dance.axis] = s < 0 ? a : -a;
-        pg.position[dance.bulgeAxis] += s < 0 ? b : -b;
-        pg.quaternion.copy(from.quaternion);
-      }
+      const row = s < 0 ? lane.A : lane.B;
+      if (lane.rot === 'yaw') _danceQ.setFromAxisAngle(UP, row[3]);
+      else if (lane.rot === 'pitch') {
+        _danceQ.setFromAxisAngle(dance.bulgeVec, row[3] * (dance.isFlip ? 1 : dance.hopSign));
+      } else _danceQ.identity();
+      _halfPos.set(0, dance.hopSign * row[2], 0);
+      _halfPos[dance.axis] = row[0];
+      _halfPos[dance.bulgeAxis] += row[1];
+      _halfOff.set(0, 0, 0);
+      _halfOff[dance.bulgeAxis] = from.position[dance.bulgeAxis];
+      _halfOff.applyQuaternion(_danceQ);
+      pg.position.copy(_halfPos).add(_halfOff);
+      pg.quaternion.copy(_danceQ).multiply(from.quaternion);
     }
   };
 
@@ -678,7 +690,8 @@ function CubeScene({
       anim.t = Math.min(1, anim.t + delta / ANIM_SECONDS);
       const e = easeInOut(anim.t);
       g.quaternion.slerpQuaternions(anim.fromQ, anim.toQ, e);
-      if (anim.dance) applyDance(anim.dance, e);
+      // lanes carry their own timing — play them on the linear clock
+      if (anim.dance) applyDance(anim.dance, anim.t);
       else applyRests();
       if (anim.t >= 1) {
         if (anim.dance) restsRef.current = anim.dance.toRests;
@@ -741,7 +754,7 @@ function CubeScene({
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
-  swapStyle = 'orbit',
+  swapStyle = 'orbit', flipStyle = 'hand',
 }) {
   return (
     <div style={{ width: '100%', height: '600px' }}>
@@ -757,6 +770,7 @@ export default function CognitiveCube({
           shadowSat={shadowSat}
           blendSides={blendSides}
           swapStyle={swapStyle}
+          flipStyle={flipStyle}
         />
       </Canvas>
     </div>

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   identityLattice, latticeDet, composeLattice, applyLattice, DANCES,
-  swapOrbitCenter, swapHopCenters, flipPose,
+  swapOrbitCenter, swapHopCenters, flipPose, LANES, sampleTrack,
 } from './choreography.js';
 import { POLES, TYPE_STACKS, homeOrientation } from './cubeModel.js';
 
@@ -90,6 +90,69 @@ for (let i = 0; i <= N; i++) {
 // Sanity: POLES slots are the half-offsets the lanes assume.
 for (const p of POLES) {
   assert.ok(Math.abs(p.sx) === 1 && Math.abs(p.sz) === 1);
+}
+
+// ── Baked lanes ─────────────────────────────────────────────────────────────
+// Clearance between the halves at one sampled moment, rows [a, b, y, rot]
+// per half sharing the rotation angle: separating-axis over the rotation
+// plane's axes plus the unrotated third axis. Extents: 1.5 along a, 3
+// along b and y.
+function rowClearance(rot, A, B) {
+  const da = A[0] - B[0];
+  const db = A[1] - B[1];
+  const dy = A[2] - B[2];
+  const ang = A[3];
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  if (rot === 'yaw') {
+    return Math.max(
+      Math.abs(da * c + db * s) - 1.5,
+      Math.abs(-da * s + db * c) - 3,
+      Math.abs(dy) - 3,
+    );
+  }
+  return Math.max(
+    Math.abs(da * c + dy * s) - 1.5,
+    Math.abs(-da * s + dy * c) - 3,
+    Math.abs(db) - 3,
+  );
+}
+
+for (const [name, lane] of Object.entries(LANES)) {
+  const S = 800;
+  const A = [0, 0, 0, 0];
+  const B = [0, 0, 0, 0];
+  let interior = Infinity;
+  for (let i = 0; i <= S; i++) {
+    const t = i / S;
+    sampleTrack(lane.A, t, A);
+    sampleTrack(lane.B, t, B);
+    assert.ok(Math.abs(A[3] - B[3]) < 1e-6, `${name} halves share the angle`);
+    const c = rowClearance(lane.rot, A, B);
+    // never intersecting beyond the squircle corner grace, at any moment
+    assert.ok(c >= -0.03, `${name} clearance at t=${t}: ${c}`);
+    if (t > 0.25 && t < 0.75) interior = Math.min(interior, c);
+  }
+  // least-action lanes hold a real passing gap through the crossing
+  if (name.startsWith('action')) {
+    assert.ok(interior >= 0.08, `${name} interior gap: ${interior}`);
+  }
+  // endpoints: rest configuration, at rest (near-zero first differences)
+  const first = lane.A[0];
+  const last = lane.A[lane.A.length - 1];
+  assert.ok(Math.abs(first[0] + 0.75) < 1e-4 && Math.abs(first[1]) < 1e-4
+    && Math.abs(first[2]) < 1e-4 && Math.abs(first[3]) < 1e-4, `${name} start`);
+  assert.ok(Math.abs(Math.abs(last[0]) - 0.75) < 1e-3 && Math.abs(last[1]) < 1e-3
+    && Math.abs(last[2]) < 1e-3, `${name} end position`);
+  assert.ok(Math.abs(last[3]) < 1e-3 || Math.abs(last[3] - Math.PI) < 1e-3,
+    `${name} end rotation`);
+  for (const track of [lane.A, lane.B]) {
+    const n = track.length;
+    for (let k = 0; k < 4; k++) {
+      assert.ok(Math.abs(track[1][k] - track[0][k]) < 2e-3, `${name} rest at start`);
+      assert.ok(Math.abs(track[n - 1][k] - track[n - 2][k]) < 2e-3, `${name} rest at end`);
+    }
+  }
 }
 
 console.log('choreography: all tests passed');

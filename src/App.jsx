@@ -31,7 +31,12 @@ const shadowSat = params.has('sat') && Number.isFinite(satParam)
 // hard pole boundaries
 const blendSides = params.get('blend') === '1';
 // swap: choreography of the half-cube swap dance
-const initialSwapStyle = params.get('swap') === 'hop' ? 'hop' : 'orbit';
+const SWAP_STYLES = ['orbit', 'hop', 'planar', 'vertical', 'action-hop'];
+const initialSwapStyle = SWAP_STYLES.includes(params.get('swap'))
+  ? params.get('swap')
+  : 'orbit';
+// flip: hand-authored or least-action flip lane
+const initialFlipStyle = params.get('flip') === 'action' ? 'action' : 'hand';
 // yaw absent → the cube snaps to the selected type's home pose instead
 const initialYaw = params.has('yaw')
   ? (Number(params.get('yaw')) || 0) * (Math.PI / 180)
@@ -45,13 +50,15 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
   const [swapStyle, setSwapStyle] = useState(initialSwapStyle);
+  const [flipStyle, setFlipStyle] = useState(initialFlipStyle);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
     url.searchParams.set('swap', swapStyle);
+    url.searchParams.set('flip', flipStyle);
     window.history.replaceState(null, '', url);
-  }, [selectedType, swapStyle]);
+  }, [selectedType, swapStyle, flipStyle]);
 
   const stack = TYPE_STACKS[selectedType];
 
@@ -83,25 +90,27 @@ function App() {
       </div>
 
       <div className="swap-control">
-        <b>Swap path:</b>
-        <label>
-          <input
-            type="radio"
-            name="swapStyle"
-            checked={swapStyle === 'orbit'}
-            onChange={() => setSwapStyle('orbit')}
-          />
-          orbit
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="swapStyle"
-            checked={swapStyle === 'hop'}
-            onChange={() => setSwapStyle('hop')}
-          />
-          hop over
-        </label>
+        <label htmlFor="swapSel"><b>Swap lane:</b></label>
+        <select
+          id="swapSel"
+          value={swapStyle}
+          onChange={e => setSwapStyle(e.target.value)}
+        >
+          <option value="orbit">hand · orbit</option>
+          <option value="hop">hand · hop over</option>
+          <option value="planar">least action · planar</option>
+          <option value="vertical">least action · over/under</option>
+          <option value="action-hop">least action · hop over</option>
+        </select>
+        <label htmlFor="flipSel" className="flip-label"><b>Flip lane:</b></label>
+        <select
+          id="flipSel"
+          value={flipStyle}
+          onChange={e => setFlipStyle(e.target.value)}
+        >
+          <option value="hand">hand</option>
+          <option value="action">least action</option>
+        </select>
       </div>
 
       <CognitiveCube
@@ -116,6 +125,7 @@ function App() {
         shadowSat={shadowSat}
         blendSides={blendSides}
         swapStyle={swapStyle}
+        flipStyle={flipStyle}
       />
     </div>
   );

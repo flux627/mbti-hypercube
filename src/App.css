@@ -38,12 +38,15 @@ h2 {
 }
 
 .swap-control label {
-  margin-left: 14px;
+  margin-right: 8px;
 }
 
-.swap-control input {
-  margin-right: 5px;
-  vertical-align: middle;
+.swap-control .flip-label {
+  margin-left: 24px;
+}
+
+.swap-control select {
+  font-size: 14px;
 }
 
 .legend {

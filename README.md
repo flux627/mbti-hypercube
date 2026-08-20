@@ -106,8 +106,14 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
   8/8 parity split).
 - `src/lib/choreography.js` — pure transition choreography: the lattice (a
   diagonal sign map recording which reflection the pole arrangement
-  currently realizes), the three dance generators, and the lane math for
-  the swap (orbit and hop) and the flip, with clearance constants.
+  currently realizes), the three dance generators, the hand lane math, and
+  the baked-lane sampler.
+- `scripts/optimize-lanes.mjs` (`npm run lanes`) — offline least-action
+  lane optimizer: minimum-jerk direct collocation under the physical
+  metric (mass for translation, slab inertia for rotation) with
+  separating-axis clearance, seeded from the hand lanes (which selects the
+  homotopy class: planar, over/under, or one-over). Emits
+  `src/lib/lanes.generated.js`, the baked knot tables the runtime plays.
 - `src/lib/choreography.test.js` — locks those constants: dense-sampled
   separating-axis tests prove the halves never intersect on any lane, and
   the lattice algebra (each dance is a reflection and an involution;
