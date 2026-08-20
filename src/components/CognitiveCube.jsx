@@ -234,17 +234,6 @@ const FnRankLabel = React.memo(function FnRankLabel({ fn, rank }) {
   );
 });
 
-// Per-face constants derived from the model's canonical UV frame.
-function useFaceFrame(face) {
-  return useMemo(() => {
-    const p = k => new THREE.Vector3(...CORNERS[face.corners[k]]).multiplyScalar(SCALE);
-    const corners = { c00: p('c00'), c10: p('c10'), c01: p('c01'), c11: p('c11') };
-    const normal = new THREE.Vector3(...face.normal);
-    const center = new THREE.Vector3().addVectors(corners.c00, corners.c11).multiplyScalar(0.5);
-    return { corners, normal, center };
-  }, [face]);
-}
-
 // Position within a side face at `fraction` from center toward `corner` —
 // laid on the pole's superellipsoid surface (a face-plane position would
 // float where the surface recedes toward the edges), lifted slightly to
@@ -263,7 +252,7 @@ function towardCorner(face, frame, corner, fraction, lift, exponent) {
 
 function Pole({
   pole, geometry, exponent, lineOpacity, shadowDim, shadowSat, blendSides,
-  selectedType, onSelect, onHover, draggingRef, latticeRef, registerGroup,
+  selectedType, hoveredType, onSelect, onHover, draggingRef, latticeRef, registerGroup,
 }) {
   const localGroupRef = useRef();
   const center = useMemo(
@@ -295,16 +284,62 @@ function Pole({
 
   useEffect(() => () => material.dispose(), [material]);
 
+  // Colors crossfade to the new shading on the same clock and easing as the
+  // transition itself, starting from whatever is currently displayed.
+  const colorAnimRef = useRef(null);
+  const colorsInitRef = useRef(false);
   useEffect(() => {
     const u = material.uniforms;
-    u.nearTop.value.set(shading.nearTop);
-    u.nearBottom.value.set(shading.nearBottom);
-    u.farTop.value.set(shading.farTop);
-    u.farBottom.value.set(shading.farBottom);
-    u.dirFace.value.set(...shading.dirFace);
-    u.ownWeight.value = shading.isNear ? 1 : 0;
-    u.blendSides.value = blendSides ? 1 : 0;
-  }, [shading, blendSides, material]);
+    const to = {
+      nearTop: new THREE.Color(shading.nearTop),
+      nearBottom: new THREE.Color(shading.nearBottom),
+      farTop: new THREE.Color(shading.farTop),
+      farBottom: new THREE.Color(shading.farBottom),
+      dirFace: new THREE.Vector3(...shading.dirFace),
+      ownWeight: shading.isNear ? 1 : 0,
+    };
+    if (!colorsInitRef.current) {
+      colorsInitRef.current = true;
+      u.nearTop.value.copy(to.nearTop);
+      u.nearBottom.value.copy(to.nearBottom);
+      u.farTop.value.copy(to.farTop);
+      u.farBottom.value.copy(to.farBottom);
+      u.dirFace.value.copy(to.dirFace);
+      u.ownWeight.value = to.ownWeight;
+      return;
+    }
+    colorAnimRef.current = {
+      t: 0,
+      from: {
+        nearTop: u.nearTop.value.clone(),
+        nearBottom: u.nearBottom.value.clone(),
+        farTop: u.farTop.value.clone(),
+        farBottom: u.farBottom.value.clone(),
+        dirFace: u.dirFace.value.clone(),
+        ownWeight: u.ownWeight.value,
+      },
+      to,
+    };
+  }, [shading, material]);
+
+  useEffect(() => {
+    material.uniforms.blendSides.value = blendSides ? 1 : 0;
+  }, [blendSides, material]);
+
+  useFrame((_, delta) => {
+    const a = colorAnimRef.current;
+    if (!a) return;
+    a.t = Math.min(1, a.t + delta / ANIM_SECONDS);
+    const e = easeInOut(a.t);
+    const u = material.uniforms;
+    u.nearTop.value.lerpColors(a.from.nearTop, a.to.nearTop, e);
+    u.nearBottom.value.lerpColors(a.from.nearBottom, a.to.nearBottom, e);
+    u.farTop.value.lerpColors(a.from.farTop, a.to.farTop, e);
+    u.farBottom.value.lerpColors(a.from.farBottom, a.to.farBottom, e);
+    u.dirFace.value.lerpVectors(a.from.dirFace, a.to.dirFace, e);
+    u.ownWeight.value = a.from.ownWeight + (a.to.ownWeight - a.from.ownWeight) * e;
+    if (a.t >= 1) colorAnimRef.current = null;
+  });
 
   // The semantic cube face this event's surface belongs to — null for caps,
   // and for rounded regions facing another pole (grooves), which don't
@@ -351,6 +386,44 @@ function Pole({
     document.body.style.cursor = type ? 'pointer' : 'auto';
   };
 
+  // Labels ride the pole: their positions are fixed in the pole's own
+  // geometry frame, so they stay attached to their quadrants through every
+  // dance and slerp (the world-upright re-basing keeps them readable even
+  // mid-flip). Each pole carries the labels of its four quadrants — its two
+  // functions on each of its two side faces.
+  const labels = useMemo(() => {
+    const out = [];
+    for (const face of FACES) {
+      if (!face.isSide) continue;
+      const onPole = face.normal[0] !== 0
+        ? face.normal[0] === pole.sx
+        : face.normal[2] === pole.sz;
+      if (!onPole) continue;
+      const frame = { center: new THREE.Vector3(...face.normal).multiplyScalar(SCALE) };
+      const normal = new THREE.Vector3(...face.normal);
+      const a = face.normal[0] !== 0 ? 'x' : 'z';
+      const aSign = Math.sign(face.normal[a === 'x' ? 0 : 2]);
+      for (const fn of [pole.top, pole.bottom]) {
+        const cornerKey = Object.keys(face.corners).find(k => face.corners[k] === fn);
+        const corner = new THREE.Vector3(...CORNERS[fn]).multiplyScalar(SCALE);
+        // badge: horizontally centered on the pole so its placement is
+        // invariant under every rearrangement, 72% toward the octant's end
+        const badgePos = new THREE.Vector3();
+        badgePos.y = CORNERS[fn][1] * SCALE * 0.72;
+        badgePos[a] = aSign * (poleExtent(0, badgePos.y, exponent) + 0.06);
+        out.push({
+          key: `${face.key}:${fn}`,
+          fn,
+          normal,
+          fnPos: towardCorner(face, frame, corner, 0.5, 0.02, exponent).sub(center),
+          badgePos,
+          type: typeAtCorner(face, cornerKey),
+        });
+      }
+    }
+    return out;
+  }, [pole, exponent, center]);
+
   // Equator: the pole's full y = 0 cross-section (a superellipse), one
   // closed loop splitting the pole into its two type octants — the only
   // quadrant boundary that needs drawing, since the grooves between poles
@@ -394,58 +467,33 @@ function Pole({
           side={THREE.DoubleSide}
         />
       )}
-    </group>
-  );
-}
-
-// A side face's non-geometry dressing: the labels (the quadrant boundaries
-// are geometry — the grooves between poles and each pole's equator line).
-// Each quadrant labels its function with the selected type's rank as a
-// subscript (stack 1–4, shadow 5–8), plus the type badge, shown only for
-// the selected type or while the quadrant is hovered.
-function FaceAnnotations({ face, exponent, selectedType, hoveredType, lattice, groupRef }) {
-  const frame = useFaceFrame(face);
-  // labels live where the lattice has physically put the poles
-  const mapL = v => new THREE.Vector3(lattice.lx * v.x, lattice.ly * v.y, lattice.lz * v.z);
-  const mappedNormal = mapL(frame.normal);
-
-  return (
-    <group>
-      {Object.entries(frame.corners).map(([key, corner]) => {
-        const fn = face.corners[key];
-        const type = typeAtCorner(face, key);
-        return (
-          <group key={key}>
+      {labels.map(l => (
+        <group key={l.key}>
+          <SurfaceLabel groupRef={localGroupRef} position={l.fnPos} normal={l.normal}>
+            <FnRankLabel fn={l.fn} rank={functionRank(selectedType, l.fn)} />
+          </SurfaceLabel>
+          {l.type && (
             <SurfaceLabel
-              groupRef={groupRef}
-              position={mapL(towardCorner(face, frame, corner, 0.5, 0.02, exponent))}
-              normal={mappedNormal}
+              groupRef={localGroupRef}
+              position={l.badgePos}
+              normal={l.normal}
+              visible={l.type === selectedType || l.type === hoveredType}
             >
-              <FnRankLabel fn={fn} rank={functionRank(selectedType, fn)} />
-            </SurfaceLabel>
-            {type && (
-              <SurfaceLabel
-                groupRef={groupRef}
-                position={mapL(towardCorner(face, frame, corner, 0.72, 0.06, exponent))}
-                normal={mappedNormal}
-                visible={type === selectedType || type === hoveredType}
+              <Text
+                raycast={() => null}
+                fontSize={0.15}
+                color={l.type === selectedType ? 'white' : '#bbbbbb'}
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.01}
+                outlineColor="black"
               >
-                <Text
-                  raycast={() => null}
-                  fontSize={0.15}
-                  color={type === selectedType ? 'white' : '#bbbbbb'}
-                  anchorX="center"
-                  anchorY="middle"
-                  outlineWidth={0.01}
-                  outlineColor="black"
-                >
-                  {type}
-                </Text>
-              </SurfaceLabel>
-            )}
-          </group>
-        );
-      })}
+                {l.type}
+              </Text>
+            </SurfaceLabel>
+          )}
+        </group>
+      ))}
     </group>
   );
 }
@@ -463,11 +511,15 @@ function CubeScene({
   const { gl, camera } = useThree();
 
   // The lattice: which reflection the pole arrangement currently realizes.
-  // State for the labels/interaction, a ref for the frame loop and handlers.
-  const [lattice, setLattice] = useState(() =>
-    initialYaw !== null ? identityLattice() : initialLatticeFor(selectedType));
-  const latticeRef = useRef(lattice);
-  const restsRef = useRef(restsForLattice(lattice));
+  // A ref only — labels ride the pole groups, so nothing re-renders on it.
+  const latticeRef = useRef(null);
+  if (!latticeRef.current) {
+    latticeRef.current = initialYaw !== null
+      ? identityLattice()
+      : initialLatticeFor(selectedType);
+  }
+  const restsRef = useRef(null);
+  if (!restsRef.current) restsRef.current = restsForLattice(latticeRef.current);
   const poleGroupsRef = useRef({});
   const swapStyleRef = useRef(swapStyle);
   swapStyleRef.current = swapStyle;
@@ -544,7 +596,6 @@ function CubeScene({
         hopSign: Math.sign(localUp.y) || 1,
       };
       latticeRef.current = L;
-      setLattice(L);
       animRef.current = { fromQ: g.quaternion.clone(), toQ: best.q, t: 0, dance };
     } else {
       animRef.current = {
@@ -665,23 +716,12 @@ function CubeScene({
             shadowSat={shadowSat}
             blendSides={blendSides}
             selectedType={selectedType}
+            hoveredType={hoveredType}
             onSelect={handleSelect}
             onHover={setHoveredType}
             draggingRef={draggingRef}
             latticeRef={latticeRef}
             registerGroup={registerGroup}
-          />
-        ))}
-
-        {FACES.filter(face => face.isSide).map(face => (
-          <FaceAnnotations
-            key={face.key}
-            face={face}
-            exponent={exponent}
-            selectedType={selectedType}
-            hoveredType={hoveredType}
-            lattice={lattice}
-            groupRef={groupRef}
           />
         ))}
       </group>
