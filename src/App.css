@@ -8,6 +8,12 @@ body {
   padding: 20px;
 }
 
+/* ?bare=1 — cube only, for the Transition Explorer iframe */
+html:has(body.bare), body.bare {
+  background: #0a0a0a !important;
+  padding: 0;
+}
+
 .app {
   max-width: 100%;
 }

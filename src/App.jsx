@@ -78,10 +78,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (bare) {
-      document.body.style.background = '#0a0a0a';
-      document.body.style.margin = '0';
-    }
+    if (bare) document.body.classList.add('bare');
   }, []);
 
   const stack = TYPE_STACKS[selectedType];

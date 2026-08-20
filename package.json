@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node src/lib/cubeModel.test.js && node src/lib/choreography.test.js",
     "lanes": "node scripts/optimize-lanes.mjs",
-    "deploy": "vite build && wrangler deploy"
+    "deploy": "vite build && wrangler deploy",
+    "kinds": "node scripts/enumerate-kinds.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.88.17",

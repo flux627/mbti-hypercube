@@ -739,13 +739,16 @@ function CubeScene({
     } else {
       const q = homePoseQuat(selectedType, camera, L);
       const { axis, angle } = residualOf(g.quaternion, q);
+      // for a near-180° pure rotation both directions are equal cost and
+      // ?dd=-1 picks the other way
+      const resAngle = FORCE.dir === -1 && angle > 2.96 ? angle - 2 * Math.PI : angle;
       window.__lastPlan = {
         mode: PLAN_MODE, target: selectedType, chosen: 'slerp-only',
-        chosenDeg: Math.round(angle * 180 / Math.PI), candidates: [],
+        chosenDeg: Math.round(resAngle * 180 / Math.PI), candidates: [],
       };
       animRef.current = {
         fromQ: g.quaternion.clone(), toQ: q,
-        resAxis: axis, resAngle: angle,
+        resAxis: axis, resAngle,
         t: 0, dance: null,
       };
     }
