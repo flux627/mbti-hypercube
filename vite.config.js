@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    // permits access via the machine's tailnet name when run with --host
+    allowedHosts: ['.ts.net']
   }
 });
