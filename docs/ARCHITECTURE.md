@@ -163,6 +163,12 @@ the planner's candidates; an override matching no candidate is ignored.
 
 ## Dev workflow
 
+- **Transition Explorer**: `/explore.html` — pick from/to types, lanes,
+  duration, and direction overrides, or click a row in the live
+  scored-candidate table (read from `window.__lastPlan`) to play exactly
+  that combination. Runs the app in an iframe via `bare=1` (cube only)
+  and `to=`/`play=` (auto-fire a transition after load).
+
 - `npm run dev -- --port 3000 --host 127.0.0.1 --no-open`; expose over the
   tailnet with `tailscale serve --bg --https=8444 http://127.0.0.1:3000`
   (https://juliens-macbook-pro-m3-3.taild9c359.ts.net:8444 — plain HTTP
