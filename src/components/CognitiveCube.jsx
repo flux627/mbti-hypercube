@@ -148,10 +148,30 @@ const _nrm = new THREE.Matrix3();
 const _toCam = new THREE.Vector3();
 const _hitN = new THREE.Vector3();
 const _danceQ = new THREE.Quaternion();
+const _resQ = new THREE.Quaternion();
 const _rowA = [0, 0, 0, 0];
 const _rowB = [0, 0, 0, 0];
 const _halfPos = new THREE.Vector3();
 const _halfOff = new THREE.Vector3();
+
+// plan: candidate selection rule. 'motion' scores each dance (and, near
+// 180°, each rotation direction) by the world motion of the composite it
+// would produce; 'residual' is the legacy smallest-residual-angle rule,
+// kept for A/B comparison via ?plan=residual.
+const PLAN_MODE = new URLSearchParams(window.location.search).get('plan') === 'residual'
+  ? 'residual' : 'motion';
+
+// The residual rotation from one orientation to another, as axis + angle
+// (the w >= 0 representative, so angle is the short way in [0, pi]).
+function residualOf(fromQ, toQ) {
+  const res = fromQ.clone().invert().multiply(toQ);
+  const angle = 2 * Math.acos(Math.min(1, Math.abs(res.w)));
+  const axis = new THREE.Vector3(res.x, res.y, res.z);
+  if (res.w < 0) axis.negate();
+  if (axis.lengthSq() < 1e-12) axis.set(0, 1, 0);
+  axis.normalize();
+  return { axis, angle };
+}
 
 // UI swap-style values → baked lane names
 const SWAP_LANES = {
@@ -592,10 +612,49 @@ function CubeScene({
     }
   }, []);
 
-  // Selection → plan the transition: one proper slerp, plus at most one
-  // dance when the target parity differs from the lattice's. The dance is
-  // whichever of {swap-x, swap-z, flip} leaves the smallest residual
-  // rotation for the slerp.
+  // Construct the dance descriptor for one generator from the current rests.
+  const buildDance = (name, targetType, currentQ, bulgeSign = 1, ySign = 1) => {
+    const fromRests = {};
+    const toRests = {};
+    const isFlip = name === 'flip';
+    // flip splits along the target face's in-plane horizontal axis and
+    // turns about the face-normal axis — the user-facing left/right split
+    const faceNormal = homeOrientation(targetType).normal;
+    const axis = isFlip
+      ? (faceNormal[0] !== 0 ? 'z' : 'x')
+      : (name === 'swap-x' ? 'x' : 'z');
+    const bulgeAxis = axis === 'x' ? 'z' : 'x';
+    const bulgeVec = new THREE.Vector3(bulgeAxis === 'x' ? 1 : 0, 0, bulgeAxis === 'z' ? 1 : 0);
+    for (const pole of POLES) {
+      const from = restsRef.current[pole.key];
+      fromRests[pole.key] = {
+        position: from.position.clone(),
+        quaternion: from.quaternion.clone(),
+      };
+      const p = from.position.clone();
+      const q = from.quaternion.clone();
+      if (isFlip) q.premultiply(new THREE.Quaternion().setFromAxisAngle(bulgeVec, Math.PI));
+      else p[axis] *= -1;
+      toRests[pole.key] = { position: p, quaternion: q };
+    }
+    // vertical motion must read as world-up, whichever way the cube hangs
+    const localUp = UP.clone().applyQuaternion(currentQ.clone().invert());
+    return {
+      lane: isFlip
+        ? (flipStyleRef.current === 'action' ? 'action-flip' : 'hand-flip')
+        : (SWAP_LANES[swapStyleRef.current] || 'hand-orbit'),
+      isFlip, axis, bulgeAxis, bulgeVec, fromRests, toRests,
+      hopSign: Math.sign(localUp.y) || 1,
+      bulgeSign, ySign,
+    };
+  };
+
+  // Selection → plan the transition: one proper rotation, plus at most one
+  // dance when the target parity differs from the lattice's. Every
+  // candidate — each of {swap-x, swap-z, flip}, and near-180° residuals
+  // both rotation directions — is scored by the world motion its composite
+  // would produce; PLAN_MODE picks by that motion (default) or by the
+  // legacy smallest-residual rule.
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     const g = groupRef.current;
@@ -607,59 +666,69 @@ function CubeScene({
     }
 
     const parity = homeOrientation(selectedType).parity;
-    let L = latticeRef.current;
-    let dance = null;
+    const L = latticeRef.current;
 
     if (parity !== latticeDet(L)) {
-      let best = null;
+      const candidates = [];
       for (const name of ['swap-x', 'swap-z', 'flip']) {
         const Lc = composeLattice(DANCES[name], L);
         const q = homePoseQuat(selectedType, camera, Lc);
-        const angle = q.angleTo(g.quaternion);
-        if (!best || angle < best.angle) best = { name, Lc, q, angle };
+        const { axis, angle } = residualOf(g.quaternion, q);
+        // near 180° the short way is ambiguous — score both directions
+        const dirs = angle > 2.96 ? [angle, angle - 2 * Math.PI] : [angle];
+        for (const bulgeSign of [1, -1]) {
+          for (const ySign of [1, -1]) {
+            const dance = buildDance(name, selectedType, g.quaternion, bulgeSign, ySign);
+            for (const a of dirs) {
+              candidates.push({
+                name, Lc, q, dance, axis, angle: a, bulgeSign, ySign,
+                legacy: bulgeSign === 1 && ySign === 1 && a === angle,
+                motion: compositeMotion(dance, g.quaternion, axis, a),
+              });
+            }
+          }
+        }
       }
-      L = best.Lc;
-
-      const fromRests = {};
-      const toRests = {};
-      const isFlip = best.name === 'flip';
-      // flip splits along the target face's in-plane horizontal axis and
-      // turns about the face-normal axis — the user-facing left/right split
-      const faceNormal = homeOrientation(selectedType).normal;
-      const axis = isFlip
-        ? (faceNormal[0] !== 0 ? 'z' : 'x')
-        : (best.name === 'swap-x' ? 'x' : 'z');
-      const bulgeAxis = axis === 'x' ? 'z' : 'x';
-      const bulgeVec = new THREE.Vector3(bulgeAxis === 'x' ? 1 : 0, 0, bulgeAxis === 'z' ? 1 : 0);
-      for (const pole of POLES) {
-        const from = restsRef.current[pole.key];
-        fromRests[pole.key] = {
-          position: from.position.clone(),
-          quaternion: from.quaternion.clone(),
-        };
-        const p = from.position.clone();
-        const q = from.quaternion.clone();
-        if (isFlip) q.premultiply(new THREE.Quaternion().setFromAxisAngle(bulgeVec, Math.PI));
-        else p[axis] *= -1;
-        toRests[pole.key] = { position: p, quaternion: q };
+      let best = null;
+      for (const c of candidates) {
+        if (PLAN_MODE === 'residual' && !c.legacy) continue;
+        const better = !best || (PLAN_MODE === 'motion'
+          ? c.motion < best.motion - 1e-9
+          : Math.abs(c.angle) < Math.abs(best.angle) - 1e-9);
+        if (better) best = c;
       }
-      // vertical motion must read as world-up, whichever way the cube hangs
-      const localUp = UP.clone().applyQuaternion(g.quaternion.clone().invert());
-      dance = {
-        lane: isFlip
-          ? (flipStyleRef.current === 'action' ? 'action-flip' : 'hand-flip')
-          : (SWAP_LANES[swapStyleRef.current] || 'hand-orbit'),
-        isFlip, axis, bulgeAxis, bulgeVec, fromRests, toRests,
-        hopSign: Math.sign(localUp.y) || 1,
+      window.__lastPlan = {
+        mode: PLAN_MODE,
+        target: selectedType,
+        chosen: `${best.name} b${best.bulgeSign} y${best.ySign}`,
+        chosenDeg: Math.round(best.angle * 180 / Math.PI),
+        chosenMotion: Math.round(best.motion * 100) / 100,
+        candidates: candidates.map(c => ({
+          name: c.name,
+          b: c.bulgeSign,
+          y: c.ySign,
+          deg: Math.round(c.angle * 180 / Math.PI),
+          axisY: Math.round(c.axis.y * 100) / 100,
+          motion: Math.round(c.motion * 100) / 100,
+        })),
       };
-      latticeRef.current = L;
-      animRef.current = { fromQ: g.quaternion.clone(), toQ: best.q, t: 0, dance };
-    } else {
+      latticeRef.current = best.Lc;
       animRef.current = {
-        fromQ: g.quaternion.clone(),
-        toQ: homePoseQuat(selectedType, camera, L),
-        t: 0,
-        dance: null,
+        fromQ: g.quaternion.clone(), toQ: best.q,
+        resAxis: best.axis.clone(), resAngle: best.angle,
+        t: 0, dance: best.dance,
+      };
+    } else {
+      const q = homePoseQuat(selectedType, camera, L);
+      const { axis, angle } = residualOf(g.quaternion, q);
+      window.__lastPlan = {
+        mode: PLAN_MODE, target: selectedType, chosen: 'slerp-only',
+        chosenDeg: Math.round(angle * 180 / Math.PI), candidates: [],
+      };
+      animRef.current = {
+        fromQ: g.quaternion.clone(), toQ: q,
+        resAxis: axis, resAngle: angle,
+        t: 0, dance: null,
       };
     }
   }, [selectedType, camera]);
@@ -688,30 +757,80 @@ function CubeScene({
     };
   }, [gl]);
 
-  // Cube-local pole transforms for one dance frame, driven by the baked
-  // lane tables. A row is the half-center's [a, b, y, rot]; each pole is
-  // its half's center plus its own offset, rotated with the half.
+  // Cube-local pose of one pole for a sampled dance frame. A row is the
+  // half-center's [a, b, y, rot]; the pole is its half's center plus its
+  // own offset, rotated with the half. bulgeSign and ySign mirror the lane
+  // across the bulge plane / the horizontal plane — legal because lane
+  // endpoints sit at b = y = rot = 0, and separating-axis clearance is
+  // reflection-invariant. They select the dance's direction: which way an
+  // orbit goes around, which half passes over, which way a flip turns.
+  const danceLocalPose = (dance, lane, from, outPos, outQuat) => {
+    const s = Math.sign(from.position[dance.axis]);
+    const row = s < 0 ? lane.A : lane.B;
+    if (lane.rot === 'yaw') outQuat.setFromAxisAngle(UP, row[3] * dance.bulgeSign);
+    else if (lane.rot === 'pitch') {
+      outQuat.setFromAxisAngle(
+        dance.bulgeVec,
+        row[3] * (dance.isFlip ? 1 : dance.hopSign) * dance.ySign,
+      );
+    } else outQuat.identity();
+    outPos.set(0, dance.hopSign * dance.ySign * row[2], 0);
+    outPos[dance.axis] = row[0];
+    outPos[dance.bulgeAxis] += row[1] * dance.bulgeSign;
+    _halfOff.set(0, 0, 0);
+    _halfOff[dance.bulgeAxis] = from.position[dance.bulgeAxis];
+    _halfOff.applyQuaternion(outQuat);
+    outPos.add(_halfOff);
+    outQuat.multiply(from.quaternion);
+  };
+
   const applyDance = (dance, t) => {
     const lane = sampleLane(dance.lane, t, _rowA, _rowB);
     for (const pole of POLES) {
       const pg = poleGroupsRef.current[pole.key];
       const from = dance.fromRests[pole.key];
       if (!pg || !from) continue;
-      const s = Math.sign(from.position[dance.axis]);
-      const row = s < 0 ? lane.A : lane.B;
-      if (lane.rot === 'yaw') _danceQ.setFromAxisAngle(UP, row[3]);
-      else if (lane.rot === 'pitch') {
-        _danceQ.setFromAxisAngle(dance.bulgeVec, row[3] * (dance.isFlip ? 1 : dance.hopSign));
-      } else _danceQ.identity();
-      _halfPos.set(0, dance.hopSign * row[2], 0);
-      _halfPos[dance.axis] = row[0];
-      _halfPos[dance.bulgeAxis] += row[1];
-      _halfOff.set(0, 0, 0);
-      _halfOff[dance.bulgeAxis] = from.position[dance.bulgeAxis];
-      _halfOff.applyQuaternion(_danceQ);
-      pg.position.copy(_halfPos).add(_halfOff);
-      pg.quaternion.copy(_danceQ).multiply(from.quaternion);
+      danceLocalPose(dance, lane, from, pg.position, pg.quaternion);
     }
+  };
+
+  // The total world motion — translation plus gyration-weighted rotation of
+  // all four poles — that a candidate composite would produce: the dance
+  // lane playing while the group turns by resAngle about resAxis. This is
+  // what detects a frame rotation that cancels the dance's motion versus
+  // one that exaggerates it.
+  const GYRATION = 0.97;
+  const compositeMotion = (dance, fromQ, resAxis, resAngle) => {
+    const STEPS = 12;
+    const G = new THREE.Quaternion();
+    const spin = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const rowA = [0, 0, 0, 0];
+    const rowB = [0, 0, 0, 0];
+    const prev = {};
+    let cost = 0;
+    for (let i = 0; i <= STEPS; i++) {
+      const t = i / STEPS;
+      spin.setFromAxisAngle(resAxis, resAngle * easeInOut(t));
+      G.copy(fromQ).multiply(spin);
+      const lane = sampleLane(dance.lane, t, rowA, rowB);
+      for (const pole of POLES) {
+        const from = dance.fromRests[pole.key];
+        danceLocalPose(dance, lane, from, pos, quat);
+        pos.applyQuaternion(G);
+        quat.premultiply(G);
+        const p = prev[pole.key];
+        if (p) {
+          cost += pos.distanceTo(p.pos) + GYRATION * p.quat.angleTo(quat);
+          p.pos.copy(pos);
+          p.quat.copy(quat);
+        } else {
+          prev[pole.key] = { pos: pos.clone(), quat: quat.clone() };
+        }
+      }
+    }
+    return cost;
   };
 
   const applyRests = () => {
@@ -732,7 +851,13 @@ function CubeScene({
     if (anim) {
       anim.t = Math.min(1, anim.t + delta / animClock.seconds);
       const e = easeInOut(anim.t);
-      g.quaternion.slerpQuaternions(anim.fromQ, anim.toQ, e);
+      // explicit axis-angle rather than slerp: the planner chooses the
+      // rotation direction, which slerp's shortest-arc would override
+      if (anim.t >= 1) g.quaternion.copy(anim.toQ);
+      else {
+        _resQ.setFromAxisAngle(anim.resAxis, anim.resAngle * e);
+        g.quaternion.copy(anim.fromQ).multiply(_resQ);
+      }
       // lanes carry their own timing — play them on the linear clock
       if (anim.dance) applyDance(anim.dance, anim.t);
       else applyRests();

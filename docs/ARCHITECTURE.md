@@ -94,13 +94,24 @@ intersect, and every transition is one slerp plus at most one dance.
   factorization is at most one of {roll, swap, flip} ∘ at most one yaw —
   16 net maps, each reached once; roll/yaw merge into a single slerp.
 - Planner (selection effect in CognitiveCube): if target parity ≠ det(L),
-  try the three dance generators, keep the one whose composed home
-  quaternion is nearest the current group quaternion (smallest residual).
-  Chirality flips therefore swap; stack reversals (e.g. ENTP↔ISFJ) flip.
-  Flip splits along the target face's in-plane horizontal axis and turns
-  about the face normal. Retargeting mid-dance snap-finishes the previous
-  dance. Vertical dance motion is multiplied by `hopSign` (world-up,
-  whichever way the cube hangs).
+  enumerate candidates — each of the three dance generators × both mirror
+  signs of the lane (`bulgeSign` flips which way an orbit goes around,
+  `ySign` which half passes over / which way a flip turns; mirroring is
+  legal because lane endpoints sit at b = y = rot = 0 and separating-axis
+  clearance is reflection-invariant) × both rotation directions when the
+  residual is near 180°. Each candidate is scored by `compositeMotion`:
+  the sampled world translation + gyration-weighted rotation of all four
+  poles under the actual composite (lane × eased residual rotation) —
+  which is what detects a frame rotation that cancels the dance's motion
+  versus one that exaggerates it. The lowest-motion candidate wins
+  (`?plan=residual` restores the legacy smallest-residual rule for A/B).
+  The group rotation plays as explicit axis-angle, not slerp, so the
+  chosen direction is honored. Flip splits along the target face's
+  in-plane horizontal axis and turns about the face normal. Retargeting
+  mid-dance snap-finishes the previous dance. Vertical dance motion is
+  multiplied by `hopSign` (world-up, whichever way the cube hangs).
+  `window.__lastPlan` exposes the full scored candidate table for
+  headless verification.
 - Dance evaluation is table-driven: `lanes.generated.js` holds per-lane
   A/B tracks of `[a, b, y, rot]` half-center rows (a = swap/split axis,
   b = other horizontal, y vertical, rot about y for 'yaw' / about b for
@@ -144,7 +155,8 @@ Findings (jerk cost, lower = less action):
 · `n=` exponent (7) · `lines=` equator opacity (0.1) · `dim=` (0.73) ·
 `sat=` (0.9) · `blend=` (0) · `swap=` orbit|hop|planar|vertical|action-hop
 (orbit) · `flip=` hand|action (hand) · `dur=` transition seconds (1.1,
-slow-motion review) · `ease=cubic` (old easing profile, A/B review).
+slow-motion review) · `ease=cubic` (old easing profile, A/B review) ·
+`plan=residual` (legacy smallest-residual planner, A/B review).
 
 ## Dev workflow
 
@@ -171,23 +183,21 @@ slow-motion review) · `ease=cubic` (old easing profile, A/B review).
   page selectors, then lock as defaults, retire the swap/flip selectors
   (keep URL overrides), and fold the least-action findings into the
   transitions brief. Nominated: action-vertical + action-flip.
-- **Dance + rotation composites are not least-action** (approved for
-  design, not yet green-lit for build): lanes are optimized in the body
-  frame with the frame static, but a dance plays concurrently with the
-  residual slerp. Of the 240 canonical transitions, only 48 danced ones
-  have zero residual; 64 dance under a 90° yaw and 16 (the ENTP↔INTJ
-  class, where all three dance candidates tie at 180° and the planner
-  picks swap-x by iteration order) tumble about a horizontal axis
-  mid-dance, going through a stale `hopSign`. The current-to-home map
-  always factors as (one of 16 net-map classes) ∘ (arbitrary world yaw θ)
-  ∘ (small ε from mid-slerp retargets only). Plan: bake least-action
-  lanes for the composite classes too (net per-half rotation is always a
-  single fixed axis, so the row format survives with a per-lane axis);
-  fold θ mod 90° into the class choice so the concurrent slerp carries
-  only |θ| ≤ 45° about world-up (preserves hopSign; concurrent group
-  rotation never affects clearance — both halves share it); planner picks
-  by baked class cost instead of smallest residual. Escalation if 45°
-  reads badly: θ-parameterized lane families with interpolation.
+- **180°-residual composites still need least-action lanes.** The
+  motion-scoring planner solved the 90° class: choosing the orbit
+  direction that rides the frame yaw cuts composite motion from 32.05 to
+  19.72 (ENTP↔ENFP; the exaggerate-vs-cancel split the mirror signs
+  expose). But for the 180° classes (ENTP↔INTJ: opposite face + opposite
+  chirality) every candidate ties near 36.7 — no combination of existing
+  lanes and directions can do better, because the required net motion per
+  half is a screw (travel across while rolling 180° about the travel
+  axis, when danced as a swap) or an in-place 180° roll (as a flip), and
+  no lane realizes it. Plan, if pursued: bake world-frame least-action
+  screw/spin lanes for exactly these classes (estimated composite motion
+  ≈ 18–20, roughly half), played anchored to the end pose so the residual
+  no longer rides concurrently; the residual classification and
+  cost-based selection machinery already exists in the planner. The 90°
+  classes no longer need baked composites.
 - Rank subscript digits still swap instantly on re-rank (discrete text);
   a fade is possible if wanted.
 - `?dur=` and the lane selectors are review tooling; decide what stays
