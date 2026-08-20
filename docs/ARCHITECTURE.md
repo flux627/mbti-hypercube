@@ -105,8 +105,11 @@ intersect, and every transition is one slerp plus at most one dance.
   A/B tracks of `[a, b, y, rot]` half-center rows (a = swap/split axis,
   b = other horizontal, y vertical, rot about y for 'yaw' / about b for
   'pitch'); A is the half starting on the negative side. Timing is baked
-  into the knots — lanes play on the **linear** master clock (the slerp
-  keeps smootherstep easing). Poles = half center + rotated offset;
+  into the knots — lanes play on the **linear** master clock, while the
+  slerp (and the color crossfade) ease with the minimum-jerk quintic
+  6t⁵−15t⁴+10t³, so a pure-rotation transition is exactly least-action:
+  fixed-axis geodesic, min-jerk timing (`?ease=cubic` restores the old
+  cubic profile for comparison). Poles = half center + rotated offset;
   quaternion = half rotation ∘ rest quaternion. Sampling is Catmull-Rom
   (`sampleLane`).
 - Interaction under a rearranged lattice: hit normals map
@@ -141,7 +144,7 @@ Findings (jerk cost, lower = less action):
 · `n=` exponent (7) · `lines=` equator opacity (0.1) · `dim=` (0.73) ·
 `sat=` (0.9) · `blend=` (0) · `swap=` orbit|hop|planar|vertical|action-hop
 (orbit) · `flip=` hand|action (hand) · `dur=` transition seconds (1.1,
-slow-motion review).
+slow-motion review) · `ease=cubic` (old easing profile, A/B review).
 
 ## Dev workflow
 
@@ -168,6 +171,23 @@ slow-motion review).
   page selectors, then lock as defaults, retire the swap/flip selectors
   (keep URL overrides), and fold the least-action findings into the
   transitions brief. Nominated: action-vertical + action-flip.
+- **Dance + rotation composites are not least-action** (approved for
+  design, not yet green-lit for build): lanes are optimized in the body
+  frame with the frame static, but a dance plays concurrently with the
+  residual slerp. Of the 240 canonical transitions, only 48 danced ones
+  have zero residual; 64 dance under a 90° yaw and 16 (the ENTP↔INTJ
+  class, where all three dance candidates tie at 180° and the planner
+  picks swap-x by iteration order) tumble about a horizontal axis
+  mid-dance, going through a stale `hopSign`. The current-to-home map
+  always factors as (one of 16 net-map classes) ∘ (arbitrary world yaw θ)
+  ∘ (small ε from mid-slerp retargets only). Plan: bake least-action
+  lanes for the composite classes too (net per-half rotation is always a
+  single fixed axis, so the row format survives with a per-lane axis);
+  fold θ mod 90° into the class choice so the concurrent slerp carries
+  only |θ| ≤ 45° about world-up (preserves hopSign; concurrent group
+  rotation never affects clearance — both halves share it); planner picks
+  by baked class cost instead of smallest residual. Escalation if 45°
+  reads badly: θ-parameterized lane families with interpolation.
 - Rank subscript digits still swap instantly on re-rank (discrete text);
   a fade is possible if wanted.
 - `?dur=` and the lane selectors are review tooling; decide what stays

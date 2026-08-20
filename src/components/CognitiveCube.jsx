@@ -35,7 +35,15 @@ const DEFAULT_ANIM_SECONDS = 1.1;
 // review); every animated quantity — slerp, dance lanes, color crossfade —
 // shares it.
 export const animClock = { seconds: DEFAULT_ANIM_SECONDS };
-const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+// Minimum-jerk quintic: zero velocity and acceleration at both endpoints,
+// continuous jerk throughout — the least-action point-to-point profile.
+const minJerk = t => t * t * t * (10 + t * (-15 + 6 * t));
+// The former cubic profile, reachable via ?ease=cubic for A/B review; its
+// acceleration jumps sign at the midpoint (a jerk spike the quintic avoids).
+const cubicInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeInOut = new URLSearchParams(window.location.search).get('ease') === 'cubic'
+  ? cubicInOut
+  : minJerk;
 
 const poleVertexShader = /* glsl */ `
   uniform vec3 poleCenter;
