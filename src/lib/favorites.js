@@ -31,12 +31,16 @@ export const KIND_FAVORITES = {
   'mirror|180|vertical': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
   'mirror|180|lateral': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
   'mirror|180|normal': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
-  'mirror|90|up': { match: 'kind', swapLane: 'planar', flipLane: 'action' },
-  // swapLane here mirrors mirror|90|up: every pair's two directions land
-  // in the up and down kinds respectively, so a differing swap lane would
-  // make a transition and its reverse play different choreographies (the
-  // recorded 'vertical' was leftover control state — the judged example
-  // played the flip)
+  // Quarter-mirror kinds follow the fixed-handedness rule: turn clockwise
+  // seen from above, so a transition and its reverse use the same sense
+  // and repeated selections cycle rather than shuttle. The planner
+  // prefers the clockwise carrier whenever one exists; the 'up' kind
+  // survives only where geometry forces the other sense (the flip is the
+  // lone quarter carrier on the return leg of flip-carried pairs). The
+  // flip turn direction is fixed the same way in both entries, so a flip
+  // pair's two directions turn identically — two same-sense flips are
+  // one full turn.
+  'mirror|90|up': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|90|down': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|0|swap': { match: 'kind', whenSwap: { db: 1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|0|flip': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },

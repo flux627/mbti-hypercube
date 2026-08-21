@@ -732,7 +732,7 @@
   "danced": true,
   "deg": 90,
   "axis": "down",
-  "count": 32,
+  "count": 48,
   "pairs": [
    [
     "ENTP",
@@ -740,10 +740,18 @@
    ],
    [
     "ENTP",
+    "ENFP"
+   ],
+   [
+    "ENTP",
     "ESTP"
    ],
    [
     "INFJ",
+    "INTJ"
+   ],
+   [
+    "INFJ",
     "INTP"
    ],
    [
@@ -759,6 +767,14 @@
     "ESFP"
    ],
    [
+    "ENFJ",
+    "ESFJ"
+   ],
+   [
+    "ISTP",
+    "ISFP"
+   ],
+   [
     "ISTP",
     "INTP"
    ],
@@ -773,6 +789,10 @@
    [
     "ESTP",
     "ESFP"
+   ],
+   [
+    "ESTP",
+    "ENTP"
    ],
    [
     "INTJ",
@@ -781,6 +801,14 @@
    [
     "INTJ",
     "INFP"
+   ],
+   [
+    "INTJ",
+    "ISTJ"
+   ],
+   [
+    "ENTJ",
+    "ENFJ"
    ],
    [
     "ENTJ",
@@ -796,11 +824,19 @@
    ],
    [
     "ISFP",
+    "INFP"
+   ],
+   [
+    "ISFP",
     "ISTJ"
    ],
    [
     "ESFP",
     "ENFJ"
+   ],
+   [
+    "ESFP",
+    "ESTP"
    ],
    [
     "ESFP",
@@ -813,6 +849,14 @@
    [
     "INFP",
     "ISFP"
+   ],
+   [
+    "INFP",
+    "INTP"
+   ],
+   [
+    "ENFP",
+    "ESFP"
    ],
    [
     "ENFP",
@@ -829,6 +873,14 @@
    [
     "ISTJ",
     "ISFP"
+   ],
+   [
+    "ISTJ",
+    "ISFJ"
+   ],
+   [
+    "ESTJ",
+    "ENTJ"
    ],
    [
     "ESTJ",
@@ -844,7 +896,15 @@
    ],
    [
     "INTP",
+    "ISTP"
+   ],
+   [
+    "INTP",
     "INFP"
+   ],
+   [
+    "ISFJ",
+    "INFJ"
    ],
    [
     "ISFJ",
@@ -861,6 +921,10 @@
    [
     "ESFJ",
     "ENFP"
+   ],
+   [
+    "ESFJ",
+    "ESTJ"
    ]
   ],
   "label": "quarter turn ⟳ + mirror",
@@ -871,19 +935,11 @@
   "danced": true,
   "deg": 90,
   "axis": "up",
-  "count": 32,
+  "count": 16,
   "pairs": [
    [
     "ENTP",
-    "ENFP"
-   ],
-   [
-    "ENTP",
     "ENFJ"
-   ],
-   [
-    "INFJ",
-    "INTJ"
    ],
    [
     "INFJ",
@@ -894,20 +950,8 @@
     "ENTP"
    ],
    [
-    "ENFJ",
-    "ESFJ"
-   ],
-   [
     "ISTP",
     "INTJ"
-   ],
-   [
-    "ISTP",
-    "ISFP"
-   ],
-   [
-    "ESTP",
-    "ENTP"
    ],
    [
     "ESTP",
@@ -916,14 +960,6 @@
    [
     "INTJ",
     "ISTP"
-   ],
-   [
-    "INTJ",
-    "ISTJ"
-   ],
-   [
-    "ENTJ",
-    "ENFJ"
    ],
    [
     "ENTJ",
@@ -934,23 +970,11 @@
     "INFJ"
    ],
    [
-    "ISFP",
-    "INFP"
-   ],
-   [
-    "ESFP",
-    "ESTP"
-   ],
-   [
     "ESFP",
     "ESTJ"
    ],
    [
     "INFP",
-    "INTP"
-   ],
-   [
-    "INFP",
     "ISFJ"
    ],
    [
@@ -958,28 +982,12 @@
     "ENTJ"
    ],
    [
-    "ENFP",
-    "ESFP"
-   ],
-   [
     "ISTJ",
     "INTP"
    ],
    [
-    "ISTJ",
-    "ISFJ"
-   ],
-   [
-    "ESTJ",
-    "ENTJ"
-   ],
-   [
     "ESTJ",
     "ESFP"
-   ],
-   [
-    "INTP",
-    "ISTP"
    ],
    [
     "INTP",
@@ -987,19 +995,11 @@
    ],
    [
     "ISFJ",
-    "INFJ"
-   ],
-   [
-    "ISFJ",
     "INFP"
    ],
    [
     "ESFJ",
     "ESTP"
-   ],
-   [
-    "ESFJ",
-    "ESTJ"
    ]
   ],
   "label": "quarter turn ⟲ + mirror",

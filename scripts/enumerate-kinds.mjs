@@ -83,19 +83,25 @@ for (const from of types) {
     let deg;
     let ax;
     if (danced) {
-      // signature from the smallest-residual candidate (deterministic);
+      // signature from the smallest-residual candidate, except that
+      // quarter kinds prefer the clockwise-from-above carrier when one
+      // exists (the fixed-handedness rule the planner applies);
       // zero-residual kinds split by which dance realizes them — a swap
       // mirror and a flip stack-reversal look nothing alike
-      let bestA = null;
-      for (const name of ['swap-x', 'swap-z', 'flip']) {
+      const ds = ['swap-x', 'swap-z', 'flip'].map(name => {
         const Lc = composeLattice(DANCES[name], L);
         const res = residualOf(qFrom, homePoseQuat(to, Lc));
-        if (!bestA || res.angle < bestA.angle - 1e-9) bestA = { ...res, name };
-      }
-      deg = Math.round(bestA.angle * 180 / Math.PI);
-      ax = deg === 0
-        ? (bestA.name === 'flip' ? 'flip' : 'swap')
-        : axisClass(bestA.axis, deg);
+        const d = Math.round(res.angle * 180 / Math.PI);
+        return {
+          name,
+          deg: d,
+          cls: d === 0 ? (name === 'flip' ? 'flip' : 'swap') : axisClass(res.axis, d),
+        };
+      });
+      const minRaw = ds.reduce((m, d) => (d.deg < m.deg ? d : m), ds[0]);
+      const pick = (minRaw.deg === 90 && ds.find(d => d.deg === 90 && d.cls === 'down')) || minRaw;
+      deg = pick.deg;
+      ax = pick.cls;
     } else {
       const res = residualOf(qFrom, homePoseQuat(to, L));
       deg = Math.round(res.angle * 180 / Math.PI);
@@ -218,8 +224,9 @@ while (queue.length) {
           const deg = Math.round(res.angle * 180 / Math.PI);
           return { name, deg, cls: deg === 0 ? (name === 'flip' ? 'flip' : 'swap') : axisClass(res.axis, deg) };
         });
-        const min = ds.reduce((m, d) => (d.deg < m.deg ? d : m), ds[0]);
-        reachableSigs.add(`mirror|${min.deg}|${min.cls}`);
+        const minRaw = ds.reduce((m, d) => (d.deg < m.deg ? d : m), ds[0]);
+        const pick = (minRaw.deg === 90 && ds.find(d => d.deg === 90 && d.cls === 'down')) || minRaw;
+        reachableSigs.add(`mirror|${pick.deg}|${pick.cls}`);
       } else {
         const res = residualOf(qA, homePoseQuat(to, L));
         const deg = Math.round(res.angle * 180 / Math.PI);

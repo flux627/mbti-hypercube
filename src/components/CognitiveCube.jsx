@@ -767,7 +767,17 @@ function CubeScene({
             : residualAxisClass(b.canon.axis, b.canon.angle, camera),
         };
       });
-      const minD = descriptors.reduce((m, d) => (d.deg < m.deg ? d : m), descriptors[0]);
+      // Fixed handedness: quarter rotations play clockwise seen from
+      // above whenever a candidate with that sense exists (the two swaps
+      // always carry opposite senses, so for swap-carried pairs it always
+      // does). A transition and its reverse then use the SAME turning
+      // sense — repeated selections cycle like a revolving door instead
+      // of shuttling back and forth. Where geometry forces the other
+      // sense (the flip is the lone quarter carrier on return trips),
+      // the simpler quarter still wins over a 180° alternative.
+      const minRaw = descriptors.reduce((m, d) => (d.deg < m.deg ? d : m), descriptors[0]);
+      const minD = (minRaw.deg === 90
+        && descriptors.find(d => d.deg === 90 && d.cls === 'down')) || minRaw;
       const sig = `mirror|${minD.deg}|${minD.cls}`;
       const fav = PLAN_MODE === 'motion' ? KIND_FAVORITES[sig] || null : null;
       const targetNormalAxis = homeOrientation(selectedType).normal[0] !== 0 ? 'x' : 'z';
