@@ -16,6 +16,7 @@ src/lib/choreography.js       pure transition choreography
 src/lib/lanes.generated.js    baked dance lanes (generated, committed)
 scripts/optimize-lanes.mjs    offline least-action lane optimizer (npm run lanes)
 src/components/superellipsoid.js   pole surface geometry
+src/components/labelTextures.js    offscreen-canvas label textures
 src/components/CognitiveCube.jsx   the whole three.js scene
 src/components/TypeSelector.jsx, src/App.jsx   shell, URL params
 ```
