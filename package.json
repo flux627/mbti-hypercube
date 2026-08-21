@@ -10,7 +10,8 @@
     "test": "node src/lib/cubeModel.test.js && node src/lib/choreography.test.js && node src/lib/favorites.test.js",
     "lanes": "node scripts/optimize-lanes.mjs",
     "deploy": "vite build && wrangler deploy",
-    "kinds": "node scripts/enumerate-kinds.mjs"
+    "kinds": "node scripts/enumerate-kinds.mjs",
+    "verify": "node scripts/verify-favorites.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.88.17",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
+    "playwright": "^1.62.1",
     "vite": "^5.1.0"
   }
 }

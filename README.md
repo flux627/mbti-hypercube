@@ -54,12 +54,15 @@ and translated, never scaled, and never intersect. Whole-cube rotations
 (rolls and yaws) merge into a single slerp. When the target's chirality
 differs — for eight of the sixteen types the canonical grid is the *mirror
 image* of their face's rest arrangement, unreachable by rotation — the cube
-splits into its left and right halves for one dance: a **swap**, the two
-halves trading places (orbiting around each other, or one hopping over the
-other — `?swap=`), or a **flip**, both halves turning 180° end-for-end in
-unison, the same direction, staying parallel (INTP↔ENTP swaps; a stack
-reversal like ENTP↔ISFJ flips). Every transition is one slerp plus at most
-one dance. Labels re-orient every frame, so they stay upright throughout.
+splits into two halves for one dance: a **swap**, the halves trading places,
+or a **flip**, both halves turning 180° end-for-end in unison (INTP↔ENTP
+swaps; a stack reversal like ENTP↔ISFJ flips). Every transition is one
+rotation plus at most one dance. Which dance plays, which way it orbits or
+turns, and on which least-action lane is decided per transition *kind* — the
+eleven visual equivalence classes of the 240 transitions — from recorded
+taste plus a fixed-handedness rule (rotate clockwise seen from above), so
+that repeated selections cycle like a revolving door rather than shuttling.
+Labels re-orient every frame, so they stay upright throughout.
 
 ## Using it
 

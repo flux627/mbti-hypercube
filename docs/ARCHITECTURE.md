@@ -100,7 +100,15 @@ intersect, and every transition is one slerp plus at most one dance.
   legal because lane endpoints sit at b = y = rot = 0 and separating-axis
   clearance is reflection-invariant) × both rotation directions when the
   residual is near 180°. Selection is layered: the transition's **kind**
-  (its visual equivalence class — see `scripts/enumerate-kinds.mjs`)
+  (its visual equivalence class — see `scripts/enumerate-kinds.mjs`) is
+  classified from a canonical anchor, never the live pose — the previous
+  type's home pose under the current lattice and camera, world-yawed by
+  whichever quarter turn lies nearest the live pose. Small drift
+  (auto-spin, slight orbit, mid-flight retarget) therefore never skews
+  the signature, while a deliberate orbit re-anchors classification to
+  the face being looked at (selecting a type on the viewed face is an
+  in-place kind, not a 180° one) and the leftover, always under 45°,
+  rides the concurrent rotation. The kind
   looks up the user's recorded favorite in `src/lib/favorites.js`, which
   pins the dance (the candidate whose residual matches the kind, with
   `tieRole` breaking the two-swap tie in the 180° kind), per-dance-type
@@ -127,12 +135,19 @@ intersect, and every transition is one slerp plus at most one dance.
   kind's pairs; `npm run kinds` validates that every favorite pins
   exactly one dance on every pair of its kind. Re-tuning = re-record in
   the explorer, re-encode the table. The fixed-handedness rule runs
-  through everything directional: rotations play clockwise seen from
-  their axis's positive side (dd −1 about canonicalized axes; quarter
-  kinds prefer the clockwise carrier so pairs cycle rather than
-  shuttle), and the in-place swap's orbit side is probed per pair
-  (`db: 'cw'` → `danceYawSense`) because the lane-frame sign's screen
-  sense flips with the swap axis.
+  through everything directional: pure turns play clockwise seen from
+  their axis's positive side (dd −1 about canonicalized axes), quarter
+  kinds prefer the clockwise carrier so pairs cycle like a revolving
+  door rather than shuttle, and the in-place swap's orbit side is probed
+  per pair (`db: 'cw'` → `danceYawSense`) because the lane-frame sign's
+  screen sense flips with the swap axis. The one exception is the danced
+  180° mirror: its perceived sense is dominated by the swap-plus-tumble
+  composite, not the frame sign, and its dd +1 was judged by eye — the
+  direction that keeps labeled faces toward the camera mid-dance. Every
+  directional value in the table is attributed in its comments: an
+  explicit eye-judgment, the stated handedness rule, or deliberately
+  free for the motion scorer — so no future unification silently
+  overwrites a judged value.
 - Dance evaluation is table-driven: `lanes.generated.js` holds per-lane
   A/B tracks of `[a, b, y, rot]` half-center rows (a = swap/split axis,
   b = other horizontal, y vertical, rot about y for 'yaw' / about b for
@@ -196,12 +211,19 @@ the planner's candidates; an override matching no candidate is ignored.
   never works on ts.net names, they're HSTS-preloaded; IPv4 bind matters,
   the proxy targets 127.0.0.1). Tear down: `tailscale serve --https=8444 off`.
   `vite.config.js` allows `.ts.net` hosts.
-- Visual verification: headless Playwright with the machine's cached
-  chromium (`npm i playwright` in a scratch dir; no browser download).
-  Load with `&spin=0`, wait ~3.5s for troika fonts, drive transitions via
-  `page.selectOption('#typeSel', 'INTP')`, screenshot mid-flight.
-  Headless frame timing is jittery; use `&dur=` for reliable mid-dance
-  captures.
+- Visual verification: headless Playwright (devDependency; browsers via
+  `npx playwright install chromium`, though the machine cache usually
+  has one). Load with `&spin=0`, wait ~3.5s for troika fonts, drive
+  transitions via `page.selectOption('#typeSel', 'INTP')`, screenshot
+  mid-flight. Headless frame timing is jittery; use `&dur=` for reliable
+  mid-dance captures.
+- `npm run verify` (`scripts/verify-favorites.mjs [baseUrl]`) is the
+  taste-system regression sweep: every kind's example and cross-face
+  pair must produce its recorded favorite (dance, signs, lane, rotation
+  direction, exercising the per-pair clockwise orbit probe), and round
+  trips must play symmetrically. Run it against the dev server after
+  touching the planner, favorites, or lanes — and against production
+  after a deploy.
 - Deploy: `npm run deploy` (build + wrangler; assets-only Worker,
   wrangler.jsonc). Edge serves stale HTML for ~30–60s after deploy —
   verify by grepping the served HTML for the new `dist/assets/index-*.js`
