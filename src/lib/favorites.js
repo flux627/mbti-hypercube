@@ -18,23 +18,26 @@
 // chosen by the motion scorer. swapLane / flipLane name the baked lane
 // the selected dance plays.
 //
-// Every free 180° rotation direction follows the fixed-handedness rule:
-// dd = -1 about the canonicalized axis (axes are sign-normalized: up,
-// else toward the viewer, else screen-right), which reads as CLOCKWISE
-// seen from the axis's positive side — from the top for vertical turns,
-// from the right for somersaults, from the front for in-plane rolls.
-// An involution offers no other handle (either direction returns on
-// repeat), so the rule is the whole choice.
+// Pure 180° turns follow the fixed-handedness rule: dd = -1 about the
+// canonicalized axis (axes are sign-normalized: up, else toward the
+// viewer, else screen-right), which reads as CLOCKWISE seen from the
+// axis's positive side — from the top for vertical turns, from the right
+// for somersaults, from the front for in-plane rolls. An involution
+// offers no other handle (either direction returns on repeat), so for
+// pure turns the rule is the whole choice. The DANCED 180° mirror is the
+// exception: its perceived sense is dominated by the swap-plus-tumble
+// composite, not the frame sign, and its dd = 1 was judged by eye (the
+// direction that keeps the labeled faces toward the camera mid-dance).
 export const KIND_FAVORITES = {
-  'mirror|180|diagonal': { match: 'kind', tieRole: 'swap-normal', dd: -1, swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|diagonal': { match: 'kind', tieRole: 'swap-normal', dd: 1, swapLane: 'vertical', flipLane: 'action' },
   // the three 180° mirror kinds below are unreachable from canonical
   // anchors (the coverage sweep in scripts/enumerate-kinds.mjs proves the
   // reachable set), but a live camera near a threshold boundary can bin
   // the axis class differently — these entries make that degrade to the
   // same recorded 180° treatment instead of an unconstrained fallback
-  'mirror|180|vertical': { match: 'kind', tieRole: 'swap-normal', dd: -1, swapLane: 'vertical', flipLane: 'action' },
-  'mirror|180|lateral': { match: 'kind', tieRole: 'swap-normal', dd: -1, swapLane: 'vertical', flipLane: 'action' },
-  'mirror|180|normal': { match: 'kind', tieRole: 'swap-normal', dd: -1, swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|vertical': { match: 'kind', tieRole: 'swap-normal', dd: 1, swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|lateral': { match: 'kind', tieRole: 'swap-normal', dd: 1, swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|normal': { match: 'kind', tieRole: 'swap-normal', dd: 1, swapLane: 'vertical', flipLane: 'action' },
   // Quarter-mirror kinds follow the fixed-handedness rule: turn clockwise
   // seen from above, so a transition and its reverse use the same sense
   // and repeated selections cycle rather than shuttle. The planner
