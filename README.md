@@ -34,7 +34,7 @@ type's rank as a subscript: the stack 1–4, and the attitude-flipped shadow
 functions 5–8 — which sit at the antipodal corners. Type badges fade in on
 a hovered quadrant. The header names the selected type by its
 function shorthand — `NeTi (ENTP)` — and, beneath it, which side of the
-cube currently fronts the camera: the Primary face (ranks 1–4), the
+cube currently fronts the camera: the Preferred face (ranks 1–4), the
 Shadow face (5–8), or the Dominant's/Auxiliary's Complement faces
 between them.
 
@@ -90,7 +90,9 @@ npm run deploy   # build + deploy to Cloudflare Workers (needs `wrangler login`)
   pose; useful for framing the rest orientation), the superellipsoid
   exponent (default 7), the equator line opacity (default 0.1), the shadow
   dim and saturation (defaults 0.73 and 0.9), side-face blending
-  (default 0, hard boundaries), and review overrides for the dance lanes
+  (default 0, hard boundaries), `p3=0` to keep colors in sRGB (by default
+  the canvas and key paint into the display's wider P3 gamut where the
+  browser supports it), and review overrides for the dance lanes
   (`swap=orbit|hop|planar|vertical|action-hop`, `flip=hand|action`) —
   normally each transition's choreography and lane are chosen per
   transition kind by the recorded favorites (see

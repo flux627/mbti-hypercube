@@ -44,6 +44,19 @@ const durParam = Number(params.get('dur'));
 if (params.has('dur') && Number.isFinite(durParam)) {
   animClock.seconds = Math.min(20, Math.max(0.2, durParam));
 }
+// p3: paint into the display's full P3 gamut where supported (?p3=0
+// reverts to sRGB) — the raw channel values are reinterpreted as Display
+// P3, pushing the fully saturated rank colors beyond the sRGB gamut
+const wideGamut = params.get('p3') !== '0';
+const p3Supported = typeof CSS !== 'undefined'
+  && CSS.supports('color', 'color(display-p3 1 1 1)');
+// a hex color re-expressed with the same channel values as P3 primaries,
+// so the key's swatches match what the wide-gamut canvas shows
+const p3 = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `color(display-p3 ${((n >> 16) & 255) / 255} ${((n >> 8) & 255) / 255} ${(n & 255) / 255})`;
+};
+const swatchColor = wideGamut && p3Supported ? p3 : (hex) => hex;
 // bare: render only the cube, no page chrome (for the explorer iframe)
 const bare = params.get('bare') === '1';
 // to/play: auto-play a transition after load — the cube starts at ?type=
@@ -93,6 +106,7 @@ function App() {
       blendSides={blendSides}
       swapStyle={initialSwapStyle}
       flipStyle={initialFlipStyle}
+      wideGamut={wideGamut}
       onViewedSide={bare ? null : setViewedSide}
     />
   );
@@ -127,7 +141,7 @@ function App() {
           {keyRows.map(({ rank, fn, color }) => (
             <div key={rank} className="legend-row">
               <span className="rank">{rank}</span>
-              <span className="swatch" style={{ background: color }} />
+              <span className="swatch" style={{ background: swatchColor(color) }} />
               <span className="fname">{FUNCTION_NAMES[fn]}</span>
               <span className="fcode">{fn}</span>
             </div>

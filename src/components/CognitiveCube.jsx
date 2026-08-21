@@ -1059,7 +1059,7 @@ function CubeScene({
     const ranks = Object.values(face.corners).map(fn => functionRank(selectedType, fn));
     const has1 = ranks.includes(1);
     const has2 = ranks.includes(2);
-    const label = has1 && has2 ? 'Primary'
+    const label = has1 && has2 ? 'Preferred'
       : has1 ? "Dominant's Complement"
         : has2 ? "Auxiliary's Complement"
           : 'Shadow';
@@ -1151,6 +1151,22 @@ function CubeScene({
   );
 }
 
+// Reinterpret the drawing buffer as Display P3 where the browser
+// supports it: channel values are unchanged, so the fully saturated rank
+// colors land on the display's P3 primaries instead of sRGB's. Guarded
+// per-frame because three's outputColorSpace setter (which r3f's canvas
+// configuration invokes after mount) resets drawingBufferColorSpace.
+function WideGamut() {
+  const { gl } = useThree();
+  useFrame(() => {
+    const ctx = gl.getContext();
+    if ('drawingBufferColorSpace' in ctx && ctx.drawingBufferColorSpace !== 'display-p3') {
+      ctx.drawingBufferColorSpace = 'display-p3';
+    }
+  });
+  return null;
+}
+
 // Keep the cube framed on portrait viewports: the vertical fov widens as
 // the aspect narrows so the cube's sides aren't cropped. The exponent
 // under-compensates the aspect — 1 would preserve the landscape
@@ -1177,11 +1193,12 @@ function ResponsiveFraming() {
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
-  swapStyle = 'orbit', flipStyle = 'hand', onViewedSide = null,
+  swapStyle = 'orbit', flipStyle = 'hand', onViewedSide = null, wideGamut = true,
 }) {
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <Canvas camera={{ position: cameraPosition, fov: BASE_FOV }} style={{ background: '#0a0a0a' }}>
+        {wideGamut && <WideGamut />}
         <ResponsiveFraming />
         <CubeScene
           selectedType={selectedType}
