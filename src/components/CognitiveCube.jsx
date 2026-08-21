@@ -812,7 +812,7 @@ function CubeScene({
         const f = (c.name === 'flip' ? fav?.whenFlip : fav?.whenSwap) || {};
         const b = FORCE.b ?? f.db ?? null;
         const y = FORCE.y ?? f.dy ?? null;
-        const d = FORCE.dir ?? f.dd ?? null;
+        const d = FORCE.dir ?? f.dd ?? fav?.dd ?? null;
         return (!allowed || allowed.includes(c.name))
           && (b === null || c.bulgeSign === b)
           && (y === null || c.ySign === y)
