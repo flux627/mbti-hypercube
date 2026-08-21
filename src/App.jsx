@@ -117,8 +117,11 @@ function relatedForView(type, side) {
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
-  // which side of the cube fronts the camera, relative to the selected type
-  const [viewedSide, setViewedSide] = useState(null);
+  // which side of the cube fronts the camera, relative to the selected
+  // type — seeded with the home pose's answer so the first paint already
+  // dims 5-8 instead of flashing all rows bright; the per-frame tracker
+  // corrects it immediately when ?yaw= starts the cube elsewhere
+  const [viewedSide, setViewedSide] = useState('Preferred');
 
   useEffect(() => {
     const url = new URL(window.location);
