@@ -1157,7 +1157,7 @@ function CubeScene({
 // horizontal framing exactly; below 1 zooms portrait in a little while
 // staying continuous at square aspect.
 const BASE_FOV = 50;
-const PORTRAIT_ZOOM = 0.8;
+const PORTRAIT_ZOOM = 0.6;
 function ResponsiveFraming() {
   const { camera, size } = useThree();
   useEffect(() => {
