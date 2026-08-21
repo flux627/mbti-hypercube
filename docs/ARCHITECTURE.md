@@ -279,4 +279,10 @@ the planner's candidates; an override matching no candidate is ignored.
   WebGPURenderer with the pole shader rewritten as TSL nodes and a
   replacement for troika text — a large lift; any real design should cap
   boost near 2× and gate on `dynamic-range: high` so clamping browsers
-  never see >1.0 values.
+  never see >1.0 values. **Decision (2026-08): shelved.** Browser support
+  is too uneven (desktop Chrome's hue-distorting clamp being the
+  standout) and the edge-case burden too high for the payoff. The
+  exploration lives on the `webgpu-port` branch (stack upgrade, TSL
+  material, label replacement, spike findings — see its BRANCH-NOTES.md)
+  for possible later resumption; the P3 wide-gamut rendering and the
+  `/hdr.html` probe page stay shipped.
