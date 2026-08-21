@@ -281,8 +281,14 @@ the planner's candidates; an override matching no candidate is ignored.
   boost near 2× and gate on `dynamic-range: high` so clamping browsers
   never see >1.0 values. **Decision (2026-08): shelved.** Browser support
   is too uneven (desktop Chrome's hue-distorting clamp being the
-  standout) and the edge-case burden too high for the payoff. The
-  exploration lives on the `webgpu-port` branch (stack upgrade, TSL
-  material, label replacement, spike findings — see its BRANCH-NOTES.md)
-  for possible later resumption; the P3 wide-gamut rendering and the
-  `/hdr.html` probe page stay shipped.
+  standout) and the edge-case burden too high for the payoff. The port
+  itself is COMPLETE on the `webgpu-port` branch (at 3b42d0c): all five
+  stages — spike, stack upgrade to three r185 / React 19 / r3f v9,
+  WebGPURenderer + TSL pole material, canvas-texture labels, node
+  equator lines, and the gated `?hdr=` boost — individually committed,
+  with the full test/kinds/verify sweeps passing and visual parity
+  against the WebGL build at 0.13% of pixels; only the user's final
+  eye-tuning of the HDR look never happened. See the branch's
+  BRANCH-NOTES.md for the stage table, resume pointers, and learnings.
+  The P3 wide-gamut rendering and the `/hdr.html` probe page stay
+  shipped.
