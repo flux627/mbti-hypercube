@@ -2,6 +2,11 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
+import { WebGPURenderer, MeshBasicNodeMaterial } from 'three/webgpu';
+import {
+  uniform, positionLocal, normalView, vec3, vec4, mix, clamp, dot, normalize,
+  sRGBTransferEOTF,
+} from 'three/tsl';
 import { superellipsoidGeometry } from './superellipsoid.js';
 import {
   CORNERS, FACES, POLES, functionRank, poleShading, typeAtCorner, homeOrientation,
@@ -46,47 +51,52 @@ const easeInOut = new URLSearchParams(window.location.search).get('ease') === 'c
   ? cubicInOut
   : minJerk;
 
-const poleVertexShader = /* glsl */ `
-  uniform vec3 poleCenter;
-  varying vec3 vPos;
-  varying vec3 vViewNormal;
-  void main() {
-    vPos = position + poleCenter;
-    vViewNormal = normalMatrix * normal;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
 // Every pole is fully painted: the vertical gradient between its own two
 // corner colors, blended along the home-face axis toward its partner pole's
 // gradient — so the home face and its opposite show crisp columns while the
 // faces between them fade bright→dark, continuously through the grooves.
 // A touch of view-space lighting keeps the rounded form legible.
-const poleFragmentShader = /* glsl */ `
-  uniform vec3 nearTop, nearBottom, farTop, farBottom;
-  uniform vec3 dirFace;
-  uniform float halfHeight, halfSpan;
-  uniform float blendSides;  // 1 = blend across side faces, 0 = hard boundaries
-  uniform float ownWeight;   // 1 if this pole is on the home-face side
-  varying vec3 vPos;
-  varying vec3 vViewNormal;
-  void main() {
-    float ty = clamp((vPos.y + halfHeight) / (2.0 * halfHeight), 0.0, 1.0);
-    vec3 nearC = mix(nearBottom, nearTop, ty);
-    vec3 farC = mix(farBottom, farTop, ty);
-    float w = clamp((dot(vPos, dirFace) / halfSpan + 1.0) * 0.5, 0.0, 1.0);
-    // hard boundaries: the pole shows its own gradient at full strength
-    w = mix(ownWeight, w, blendSides);
-    vec3 color = mix(farC, nearC, w);
+//
+// TSL port of the former GLSL ShaderMaterial, same uniforms and math. The
+// GLSL shader wrote its values raw to the drawing buffer; the node pipeline
+// instead runs every fragment through an output pass (tone mapping + the
+// sRGB OETF), so the final color is pre-inverted with the EOTF — with tone
+// mapping flat, the output pass restores exactly the raw values, and the
+// rendered bytes match the WebGL build.
+function makePoleMaterial(center) {
+  const uniforms = {
+    nearTop: uniform(new THREE.Color()),
+    nearBottom: uniform(new THREE.Color()),
+    farTop: uniform(new THREE.Color()),
+    farBottom: uniform(new THREE.Color()),
+    dirFace: uniform(new THREE.Vector3()),
+    poleCenter: uniform(center.clone()),
+    halfHeight: uniform(POLE_HEIGHT / 2),
+    halfSpan: uniform(SCALE),
+    blendSides: uniform(1), // 1 = blend across side faces, 0 = hard boundaries
+    ownWeight: uniform(1), // 1 if this pole is on the home-face side
+  };
+  const u = uniforms;
+  const vPos = positionLocal.add(u.poleCenter);
+  const ty = clamp(vPos.y.add(u.halfHeight).div(u.halfHeight.mul(2)), 0, 1);
+  const nearC = mix(u.nearBottom, u.nearTop, ty);
+  const farC = mix(u.farBottom, u.farTop, ty);
+  const wBlend = clamp(dot(vPos, u.dirFace).div(u.halfSpan).add(1).mul(0.5), 0, 1);
+  // hard boundaries: the pole shows its own gradient at full strength
+  const w = mix(u.ownWeight, wBlend, u.blendSides);
+  const base = mix(farC, nearC, w);
 
-    vec3 n = normalize(vViewNormal);
-    vec3 lightDir = normalize(vec3(0.35, 0.5, 0.8));
-    float diff = max(dot(n, lightDir), 0.0);
-    float spec = pow(max(dot(n, normalize(lightDir + vec3(0.0, 0.0, 1.0))), 0.0), 48.0);
-    color = color * (0.72 + 0.28 * diff) + vec3(0.12) * spec;
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
+  const n = normalize(normalView);
+  const lightDir = normalize(vec3(0.35, 0.5, 0.8));
+  const diff = dot(n, lightDir).max(0);
+  const spec = dot(n, normalize(lightDir.add(vec3(0, 0, 1)))).max(0).pow(48);
+  const color = base.mul(diff.mul(0.28).add(0.72)).add(spec.mul(0.12));
+
+  const material = new MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+  material.fragmentNode = vec4(sRGBTransferEOTF(color), 1);
+  material.uniforms = uniforms;
+  return material;
+}
 
 // The world pose that shows `type` canonically (dominant top-left, stack as
 // the standard grid), fronting the camera's current horizontal direction.
@@ -221,6 +231,12 @@ function residualAxisClass(axis, angle, camera) {
   ].filter(([, v]) => v > 0.9);
   return comps.length ? comps[0][0] : 'diagonal';
 }
+
+// Interim state of the WebGPU port: troika Text and drei's Line patch GLSL
+// shaders and cannot run on the node material system, so they are skipped
+// under the WebGPU renderer until their node-based replacements land
+// (labels via canvas textures, equator lines via a node line material).
+const PORT_PENDING = { labels: true, lines: true };
 
 // UI swap-style values → baked lane names
 const SWAP_LANES = {
@@ -360,23 +376,7 @@ function Pole({
     [pole, selectedType, shadowDim, shadowSat],
   );
 
-  const material = useMemo(() => new THREE.ShaderMaterial({
-    vertexShader: poleVertexShader,
-    fragmentShader: poleFragmentShader,
-    uniforms: {
-      nearTop: { value: new THREE.Color() },
-      nearBottom: { value: new THREE.Color() },
-      farTop: { value: new THREE.Color() },
-      farBottom: { value: new THREE.Color() },
-      dirFace: { value: new THREE.Vector3() },
-      poleCenter: { value: center.clone() },
-      halfHeight: { value: POLE_HEIGHT / 2 },
-      halfSpan: { value: SCALE },
-      blendSides: { value: 1 },
-      ownWeight: { value: 1 },
-    },
-    side: THREE.DoubleSide,
-  }), [center]);
+  const material = useMemo(() => makePoleMaterial(center), [center]);
 
   useEffect(() => () => material.dispose(), [material]);
 
@@ -577,7 +577,7 @@ function Pole({
         onPointerMove={handlePointerMove}
         onPointerOut={() => { onHover(null); document.body.style.cursor = 'auto'; }}
       />
-      {lineOpacity > 0 && (
+      {!PORT_PENDING.lines && lineOpacity > 0 && (
         <Line
           points={equator}
           color="#ffffff"
@@ -587,7 +587,7 @@ function Pole({
           side={THREE.DoubleSide}
         />
       )}
-      {labels.map(l => (
+      {!PORT_PENDING.labels && labels.map(l => (
         <group key={l.key}>
           <SurfaceLabel groupRef={localGroupRef} position={l.fnPos} normal={l.normal}>
             <FnRankLabel fn={l.fn} rank={functionRank(selectedType, l.fn)} />
@@ -1153,14 +1153,31 @@ function CubeScene({
 
 // Reinterpret the drawing buffer as Display P3 where the browser
 // supports it: channel values are unchanged, so the fully saturated rank
-// colors land on the display's P3 primaries instead of sRGB's. Guarded
-// per-frame because three's outputColorSpace setter (which r3f's canvas
-// configuration invokes after mount) resets drawingBufferColorSpace.
+// colors land on the display's P3 primaries instead of sRGB's. On the
+// WebGPU backend that means re-issuing the canvas configure call with
+// colorSpace 'display-p3' (three's own configure leaves it at 'srgb');
+// on the WebGL2 fallback backend, the classic drawingBufferColorSpace
+// reinterpretation, guarded per-frame in case anything resets it.
 function WideGamut() {
   const { gl } = useThree();
+  useEffect(() => {
+    if (!gl.backend?.isWebGPUBackend) return;
+    const context = gl.backend.context;
+    const config = context.getConfiguration?.();
+    if (!config) return;
+    context.configure({
+      device: config.device,
+      format: config.format,
+      usage: config.usage,
+      alphaMode: config.alphaMode,
+      toneMapping: config.toneMapping,
+      colorSpace: 'display-p3',
+    });
+  }, [gl]);
   useFrame(() => {
-    const ctx = gl.getContext();
-    if ('drawingBufferColorSpace' in ctx && ctx.drawingBufferColorSpace !== 'display-p3') {
+    if (gl.backend?.isWebGPUBackend) return;
+    const ctx = gl.backend?.gl;
+    if (ctx && 'drawingBufferColorSpace' in ctx && ctx.drawingBufferColorSpace !== 'display-p3') {
       ctx.drawingBufferColorSpace = 'display-p3';
     }
   });
@@ -1197,7 +1214,20 @@ export default function CognitiveCube({
 }) {
   return (
     <div style={{ width: '100%', height: '100%' }}>
-      <Canvas camera={{ position: cameraPosition, fov: BASE_FOV }} style={{ background: '#0a0a0a' }}>
+      <Canvas
+        camera={{ position: cameraPosition, fov: BASE_FOV }}
+        style={{ background: '#0a0a0a' }}
+        // flat = NoToneMapping: the output pass must apply only the sRGB
+        // OETF, which the pole material pre-inverts for byte parity with
+        // the former raw-writing GLSL pipeline
+        flat
+        gl={(props) => {
+          // r3f v9 async renderer init; three falls back to its WebGL2
+          // backend automatically where WebGPU is unavailable
+          const renderer = new WebGPURenderer({ ...props, antialias: true });
+          return renderer.init().then(() => renderer);
+        }}
+      >
         {wideGamut && <WideGamut />}
         <ResponsiveFraming />
         <CubeScene
