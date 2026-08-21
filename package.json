@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/lib/cubeModel.test.js && node src/lib/choreography.test.js",
+    "test": "node src/lib/cubeModel.test.js && node src/lib/choreography.test.js && node src/lib/favorites.test.js",
     "lanes": "node scripts/optimize-lanes.mjs",
     "deploy": "vite build && wrangler deploy",
     "kinds": "node scripts/enumerate-kinds.mjs"

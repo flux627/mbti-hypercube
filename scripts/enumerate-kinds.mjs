@@ -12,6 +12,7 @@ import { TYPE_STACKS, homeOrientation } from '../src/lib/cubeModel.js';
 import {
   identityLattice, latticeDet, composeLattice, DANCES,
 } from '../src/lib/choreography.js';
+import { KIND_FAVORITES, allowedDances } from '../src/lib/favorites.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const CAM = new THREE.Vector3(5, 5, 5);
@@ -147,3 +148,35 @@ for (const k of out) {
   );
 }
 console.log(`${out.length} kinds -> public/kinds.json`);
+
+// Validate the favorites encoding: on every pair of a kind, the
+// favorite's selector must pin the dance to exactly one generator (via
+// the residual-matches-kind rule, plus tieRole where two swaps match).
+let bad = 0;
+for (const k of out) {
+  const fav = KIND_FAVORITES[k.sig];
+  if (!k.danced || !fav) continue;
+  const picks = new Map(); // selected dance type -> count
+  for (const [from, to] of k.pairs) {
+    const L = initialLatticeFor(from);
+    const qFrom = homePoseQuat(from, L);
+    const tna = homeOrientation(to).normal[0] !== 0 ? 'x' : 'z';
+    const descriptors = ['swap-x', 'swap-z', 'flip'].map(name => {
+      const Lc = composeLattice(DANCES[name], L);
+      const res = residualOf(qFrom, homePoseQuat(to, Lc));
+      const deg = Math.round(res.angle * 180 / Math.PI);
+      return { name, deg, cls: deg === 0 ? (name === 'flip' ? 'flip' : 'swap') : axisClass(res.axis, deg) };
+    });
+    const names = allowedDances(fav, descriptors, k.deg, k.axis, tna);
+    const key = !names ? 'UNRESOLVED'
+      : names.length !== 1 ? `AMBIGUOUS(${names.join('+')})`
+        : (names[0] === 'flip' ? 'flip' : 'swap');
+    picks.set(key, (picks.get(key) || 0) + 1);
+    if (!names || names.length !== 1) bad += 1;
+  }
+  console.log(`favorite ${k.sig.padEnd(22)} selects ${[...picks].map(([t, n]) => `${t}x${n}`).join(' ')}`);
+}
+if (bad) {
+  console.error(`${bad} pair(s) where the favorite fails to pin one dance`);
+  process.exit(1);
+}

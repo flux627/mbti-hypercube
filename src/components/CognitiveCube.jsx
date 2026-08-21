@@ -9,6 +9,7 @@ import {
 import {
   identityLattice, latticeDet, composeLattice, DANCES, sampleLane,
 } from '../lib/choreography.js';
+import { KIND_FAVORITES, allowedDances } from '../lib/favorites.js';
 
 const SCALE = 1.5;
 // The cube is drawn as the four POLES: vertical columns of two stacked
@@ -171,17 +172,52 @@ const FORCE = {
   y: _sign(_params.get('dy')),
   dir: _sign(_params.get('dd')),
 };
+// explicit ?swap=/?flip= lane params beat a kind favorite's lane choice
+const SWAP_LANE_FORCED = _params.has('swap');
+const FLIP_LANE_FORCED = _params.has('flip');
 
 // The residual rotation from one orientation to another, as axis + angle
 // (the w >= 0 representative, so angle is the short way in [0, pi]).
-function residualOf(fromQ, toQ) {
+// Near 180° the representative's axis sign is numerical noise (u and −u
+// are the same rotation), so it is canonicalized against the screen frame
+// — up, else toward the viewer, else screen-right — making direction
+// choices (dd) mean the same thing for every pair of a kind.
+function residualOf(fromQ, toQ, camera) {
   const res = fromQ.clone().invert().multiply(toQ);
   const angle = 2 * Math.acos(Math.min(1, Math.abs(res.w)));
   const axis = new THREE.Vector3(res.x, res.y, res.z);
   if (res.w < 0) axis.negate();
   if (axis.lengthSq() < 1e-12) axis.set(0, 1, 0);
   axis.normalize();
+  if (angle > 2.96 && camera) {
+    const n = new THREE.Vector3(camera.position.x, 0, camera.position.z).normalize();
+    let d = axis.dot(UP);
+    if (Math.abs(d) < 0.3) d = axis.dot(n);
+    if (Math.abs(d) < 0.3) d = axis.dot(new THREE.Vector3().crossVectors(UP, n));
+    if (d < 0) axis.negate();
+  }
   return { axis, angle };
+}
+
+// The screen-frame class of a residual axis, matching the taxonomy of
+// scripts/enumerate-kinds.mjs: signed classes below 180°, unsigned at 180°.
+function residualAxisClass(axis, angle, camera) {
+  const deg = angle * 180 / Math.PI;
+  const n = new THREE.Vector3(camera.position.x, 0, camera.position.z).normalize();
+  const r = new THREE.Vector3().crossVectors(UP, n);
+  const y = axis.dot(UP);
+  const nn = axis.dot(n);
+  const rr = axis.dot(r);
+  if (deg > 178) {
+    if (Math.abs(y) > 0.9) return 'vertical';
+    if (Math.abs(nn) > 0.9) return 'normal';
+    if (Math.abs(rr) > 0.9) return 'lateral';
+    return 'diagonal';
+  }
+  const comps = [
+    ['up', y], ['down', -y], ['toward', nn], ['away', -nn], ['right', rr], ['left', -rr],
+  ].filter(([, v]) => v > 0.9);
+  return comps.length ? comps[0][0] : 'diagonal';
 }
 
 // UI swap-style values → baked lane names
@@ -624,7 +660,9 @@ function CubeScene({
   }, []);
 
   // Construct the dance descriptor for one generator from the current rests.
-  const buildDance = (name, targetType, currentQ, bulgeSign = 1, ySign = 1) => {
+  // favLanes carries the kind favorite's lane choices; explicit URL lane
+  // params (and the UI selectors they encode) take precedence.
+  const buildDance = (name, targetType, currentQ, bulgeSign = 1, ySign = 1, favLanes = null) => {
     const fromRests = {};
     const toRests = {};
     const isFlip = name === 'flip';
@@ -650,10 +688,13 @@ function CubeScene({
     }
     // vertical motion must read as world-up, whichever way the cube hangs
     const localUp = UP.clone().applyQuaternion(currentQ.clone().invert());
+    const uiLane = isFlip
+      ? (flipStyleRef.current === 'action' ? 'action-flip' : 'hand-flip')
+      : (SWAP_LANES[swapStyleRef.current] || 'hand-orbit');
+    const laneForced = isFlip ? FLIP_LANE_FORCED : SWAP_LANE_FORCED;
+    const favLane = isFlip ? favLanes?.flip : favLanes?.swap;
     return {
-      lane: isFlip
-        ? (flipStyleRef.current === 'action' ? 'action-flip' : 'hand-flip')
-        : (SWAP_LANES[swapStyleRef.current] || 'hand-orbit'),
+      lane: laneForced ? uiLane : (favLane || uiLane),
       isFlip, axis, bulgeAxis, bulgeVec, fromRests, toRests,
       hopSign: Math.sign(localUp.y) || 1,
       bulgeSign, ySign,
@@ -680,31 +721,67 @@ function CubeScene({
     const L = latticeRef.current;
 
     if (parity !== latticeDet(L)) {
-      const candidates = [];
+      // per-dance residuals first: the smallest one defines the
+      // transition's kind, which selects the recorded favorite
+      const base = [];
       for (const name of ['swap-x', 'swap-z', 'flip']) {
         const Lc = composeLattice(DANCES[name], L);
         const q = homePoseQuat(selectedType, camera, Lc);
-        const { axis, angle } = residualOf(g.quaternion, q);
+        const { axis, angle } = residualOf(g.quaternion, q, camera);
+        base.push({ name, Lc, q, axis, angle });
+      }
+      const descriptors = base.map(b => {
+        const deg = Math.round(b.angle * 180 / Math.PI);
+        return {
+          name: b.name,
+          deg,
+          cls: deg === 0
+            ? (b.name === 'flip' ? 'flip' : 'swap')
+            : residualAxisClass(b.axis, b.angle, camera),
+        };
+      });
+      const minBase = base.reduce((m, b) => (b.angle < m.angle - 1e-9 ? b : m), base[0]);
+      const minD = descriptors[base.indexOf(minBase)];
+      const sig = `mirror|${minD.deg}|${minD.cls}`;
+      const fav = PLAN_MODE === 'motion' ? KIND_FAVORITES[sig] || null : null;
+      const targetNormalAxis = homeOrientation(selectedType).normal[0] !== 0 ? 'x' : 'z';
+      const favNames = allowedDances(fav, descriptors, minD.deg, minD.cls, targetNormalAxis);
+      const favLanes = fav && {
+        swap: fav.swapLane ? SWAP_LANES[fav.swapLane] || null : null,
+        flip: fav.flipLane ? (fav.flipLane === 'action' ? 'action-flip' : 'hand-flip') : null,
+      };
+
+      const candidates = [];
+      for (const b of base) {
         // near 180° the short way is ambiguous — score both directions
-        const dirs = angle > 2.96 ? [angle, angle - 2 * Math.PI] : [angle];
+        const dirs = b.angle > 2.96 ? [b.angle, b.angle - 2 * Math.PI] : [b.angle];
         for (const bulgeSign of [1, -1]) {
           for (const ySign of [1, -1]) {
-            const dance = buildDance(name, selectedType, g.quaternion, bulgeSign, ySign);
+            const dance = buildDance(b.name, selectedType, g.quaternion, bulgeSign, ySign, favLanes);
             for (const a of dirs) {
               candidates.push({
-                name, Lc, q, dance, axis, angle: a, bulgeSign, ySign,
-                legacy: bulgeSign === 1 && ySign === 1 && a === angle,
-                motion: compositeMotion(dance, g.quaternion, axis, a),
+                name: b.name, Lc: b.Lc, q: b.q, dance, axis: b.axis, angle: a, bulgeSign, ySign,
+                legacy: bulgeSign === 1 && ySign === 1 && a === b.angle,
+                motion: compositeMotion(dance, g.quaternion, b.axis, a),
               });
             }
           }
         }
       }
-      let pool = candidates.filter(c =>
-        (!FORCE.dance || c.name === FORCE.dance)
-        && (FORCE.b === null || c.bulgeSign === FORCE.b)
-        && (FORCE.y === null || c.ySign === FORCE.y)
-        && (FORCE.dir === null || c.angle === 0 || Math.sign(c.angle) === FORCE.dir));
+      // constraints: explicit URL overrides beat the favorite; the
+      // favorite's direction signs apply per dance type (whenSwap /
+      // whenFlip); whatever is left free, the motion score decides
+      const allowed = FORCE.dance ? [FORCE.dance] : favNames;
+      let pool = candidates.filter(c => {
+        const f = (c.name === 'flip' ? fav?.whenFlip : fav?.whenSwap) || {};
+        const b = FORCE.b ?? f.db ?? null;
+        const y = FORCE.y ?? f.dy ?? null;
+        const d = FORCE.dir ?? f.dd ?? null;
+        return (!allowed || allowed.includes(c.name))
+          && (b === null || c.bulgeSign === b)
+          && (y === null || c.ySign === y)
+          && (d === null || c.angle === 0 || Math.sign(c.angle) === d);
+      });
       if (!pool.length) pool = candidates;
       let best = null;
       for (const c of pool) {
@@ -718,6 +795,9 @@ function CubeScene({
       window.__lastPlan = {
         mode: PLAN_MODE,
         target: selectedType,
+        sig,
+        favored: !!fav,
+        lane: best.dance.lane,
         chosen: `${best.name} b${best.bulgeSign} y${best.ySign}`,
         chosenDeg: Math.round(best.angle * 180 / Math.PI),
         chosenMotion: Math.round(best.motion * 100) / 100,
@@ -738,12 +818,16 @@ function CubeScene({
       };
     } else {
       const q = homePoseQuat(selectedType, camera, L);
-      const { axis, angle } = residualOf(g.quaternion, q);
-      // for a near-180° pure rotation both directions are equal cost and
-      // ?dd=-1 picks the other way
-      const resAngle = FORCE.dir === -1 && angle > 2.96 ? angle - 2 * Math.PI : angle;
+      const { axis, angle } = residualOf(g.quaternion, q, camera);
+      // for a near-180° pure rotation both directions are equal cost; the
+      // kind's recorded favorite picks one, ?dd= overrides
+      const deg = Math.round(angle * 180 / Math.PI);
+      const sig = `turn|${deg}|${deg === 0 ? 'none' : residualAxisClass(axis, angle, camera)}`;
+      const fav = PLAN_MODE === 'motion' ? KIND_FAVORITES[sig] || null : null;
+      const dir = FORCE.dir ?? fav?.dd ?? null;
+      const resAngle = dir === -1 && angle > 2.96 ? angle - 2 * Math.PI : angle;
       window.__lastPlan = {
-        mode: PLAN_MODE, target: selectedType, chosen: 'slerp-only',
+        mode: PLAN_MODE, target: selectedType, sig, favored: !!fav, chosen: 'slerp-only',
         chosenDeg: Math.round(resAngle * 180 / Math.PI), candidates: [],
       };
       animRef.current = {

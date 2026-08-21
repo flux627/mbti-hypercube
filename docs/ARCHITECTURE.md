@@ -99,19 +99,34 @@ intersect, and every transition is one slerp plus at most one dance.
   `ySign` which half passes over / which way a flip turns; mirroring is
   legal because lane endpoints sit at b = y = rot = 0 and separating-axis
   clearance is reflection-invariant) × both rotation directions when the
-  residual is near 180°. Each candidate is scored by `compositeMotion`:
-  the sampled world translation + gyration-weighted rotation of all four
-  poles under the actual composite (lane × eased residual rotation) —
-  which is what detects a frame rotation that cancels the dance's motion
-  versus one that exaggerates it. The lowest-motion candidate wins
-  (`?plan=residual` restores the legacy smallest-residual rule for A/B).
-  The group rotation plays as explicit axis-angle, not slerp, so the
-  chosen direction is honored. Flip splits along the target face's
-  in-plane horizontal axis and turns about the face normal. Retargeting
-  mid-dance snap-finishes the previous dance. Vertical dance motion is
-  multiplied by `hopSign` (world-up, whichever way the cube hangs).
-  `window.__lastPlan` exposes the full scored candidate table for
-  headless verification.
+  residual is near 180°. Selection is layered: the transition's **kind**
+  (its visual equivalence class — see `scripts/enumerate-kinds.mjs`)
+  looks up the user's recorded favorite in `src/lib/favorites.js`, which
+  pins the dance (the candidate whose residual matches the kind, with
+  `tieRole` breaking the two-swap tie in the 180° kind), per-dance-type
+  direction signs, and the baked lane; whatever the favorite leaves free
+  is decided by `compositeMotion` — the sampled world translation +
+  gyration-weighted rotation of all four poles under the actual composite
+  (lane × eased residual rotation), which detects a frame rotation that
+  cancels the dance's motion versus one that exaggerates it. Explicit
+  URL overrides (`dance/db/dy/dd`, lane params) beat the favorite;
+  `?plan=residual` restores the legacy smallest-residual rule with no
+  favorites. The group rotation plays as explicit axis-angle, not slerp,
+  so chosen directions are honored, and near-180° residual axes are
+  sign-canonicalized against the screen frame (up, else toward viewer,
+  else right) so direction choices mean the same thing on every pair of
+  a kind. Flip splits along the target face's in-plane horizontal axis
+  and turns about the face normal. Retargeting mid-dance snap-finishes
+  the previous dance. Vertical dance motion is multiplied by `hopSign`
+  (world-up, whichever way the cube hangs). `window.__lastPlan` exposes
+  the kind signature and full scored candidate table for headless
+  verification.
+- Taste pipeline: favorites are recorded by eye in the Transition
+  Explorer (`/explore.html`, per-kind ★), exported as JSON, and encoded
+  in `src/lib/favorites.js` by *role* so they generalize across each
+  kind's pairs; `npm run kinds` validates that every favorite pins
+  exactly one dance on every pair of its kind. Re-tuning = re-record in
+  the explorer, re-encode the table.
 - Dance evaluation is table-driven: `lanes.generated.js` holds per-lane
   A/B tracks of `[a, b, y, rot]` half-center rows (a = swap/split axis,
   b = other horizontal, y vertical, rot about y for 'yaw' / about b for
@@ -188,25 +203,26 @@ the planner's candidates; an override matching no candidate is ignored.
 
 ## Open decisions
 
-- **Lane verdict pending**: pick winning swap lane and flip lane from the
-  page selectors, then lock as defaults, retire the swap/flip selectors
-  (keep URL overrides), and fold the least-action findings into the
-  transitions brief. Nominated: action-vertical + action-flip.
-- **180°-residual composites still need least-action lanes.** The
-  motion-scoring planner solved the 90° class: choosing the orbit
-  direction that rides the frame yaw cuts composite motion from 32.05 to
-  19.72 (ENTP↔ENFP; the exaggerate-vs-cancel split the mirror signs
-  expose). But for the 180° classes (ENTP↔INTJ: opposite face + opposite
-  chirality) every candidate ties near 36.7 — no combination of existing
-  lanes and directions can do better, because the required net motion per
-  half is a screw (travel across while rolling 180° about the travel
-  axis, when danced as a swap) or an in-place 180° roll (as a flip), and
-  no lane realizes it. Plan, if pursued: bake world-frame least-action
-  screw/spin lanes for exactly these classes (estimated composite motion
-  ≈ 18–20, roughly half), played anchored to the end pose so the residual
-  no longer rides concurrently; the residual classification and
-  cost-based selection machinery already exists in the planner. The 90°
-  classes no longer need baked composites.
+- **Lane verdict: resolved per kind by the recorded favorites** —
+  action-planar for the in-place mirror and quarter-turn kinds,
+  action-vertical for the 180° mirror kind, action-flip everywhere a flip
+  plays. The hand lanes and the UI swap/flip selectors are now review
+  tooling only; retiring the selectors (URL overrides stay) and folding
+  the least-action findings into the transitions brief remain to do.
+- **Default transition duration**: every favorite was judged at 1.6 s
+  (the explorer's default); the app default is still 1.1 s. Decide
+  whether to move to 1.6 s.
+- **180°-residual composites could still gain from least-action lanes**
+  (lower priority now: the recorded favorite for the 180° mirror kind —
+  swap-normal on the action-vertical lane, directions motion-scored —
+  was judged acceptable by eye). The physics gap remains: every existing
+  candidate for that kind ties near composite motion 36.7, while the
+  required net motion per half is a screw (travel across while rolling
+  180° about the travel axis) that a purpose-baked world-frame lane could
+  realize at roughly half that. If pursued: bake screw/spin lanes for
+  exactly these classes, played anchored to the end pose so the residual
+  no longer rides concurrently; the kind classification and constrained
+  selection machinery already exists in the planner.
 - Rank subscript digits still swap instantly on re-rank (discrete text);
   a fade is possible if wanted.
 - `?dur=` and the lane selectors are review tooling; decide what stays
