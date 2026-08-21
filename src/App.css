@@ -106,17 +106,17 @@ body {
   margin-top: 10px;
 }
 
+/* Whole line is the tap target; only the type name underlines on hover. */
 .related-row {
+  display: block;
   font-size: 12.5px;
-}
-
-.related-row a {
+  padding: 5px 10px 5px 16px;
   pointer-events: auto;
   color: #d6d6d6;
   text-decoration: none;
 }
 
-.related-row a:hover {
+.related-row:hover .related-type {
   text-decoration: underline;
 }
 
@@ -228,6 +228,7 @@ body {
 
   .related-row {
     font-size: 12px;
+    padding: 8px 10px 8px 16px;
   }
 
   /* two columns, ranks 1-4 beside 5-8, pinned to the bottom so the key

@@ -176,15 +176,15 @@ function App() {
             <>
               <div className="view-label related-label">Related types in this view:</div>
               {relatedForView(selectedType, viewedSide).map(([t, desc]) => (
-                <div key={t} className="view-indent related-row">
-                  <a
-                    href={`?type=${t}`}
-                    onClick={(e) => { e.preventDefault(); setSelectedType(t); }}
-                  >
-                    {shorthand(t)} ({t})
-                  </a>
+                <a
+                  key={t}
+                  className="related-row"
+                  href={`?type=${t}`}
+                  onClick={(e) => { e.preventDefault(); setSelectedType(t); }}
+                >
+                  <span className="related-type">{shorthand(t)} ({t})</span>
                   <span className="related-desc"> - {desc}</span>
-                </div>
+                </a>
               ))}
             </>
           )}
