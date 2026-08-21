@@ -39,22 +39,6 @@ h2 {
   font-size: 16px;
 }
 
-.swap-control {
-  margin-bottom: 14px;
-}
-
-.swap-control label {
-  margin-right: 8px;
-}
-
-.swap-control .flip-label {
-  margin-left: 24px;
-}
-
-.swap-control select {
-  font-size: 14px;
-}
-
 .legend {
   margin-left: 20px;
 }

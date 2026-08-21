@@ -60,16 +60,12 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
-  const [swapStyle, setSwapStyle] = useState(initialSwapStyle);
-  const [flipStyle, setFlipStyle] = useState(initialFlipStyle);
 
   useEffect(() => {
     const url = new URL(window.location);
     url.searchParams.set('type', selectedType);
-    url.searchParams.set('swap', swapStyle);
-    url.searchParams.set('flip', flipStyle);
     window.history.replaceState(null, '', url);
-  }, [selectedType, swapStyle, flipStyle]);
+  }, [selectedType]);
 
   useEffect(() => {
     if (!autoTo) return undefined;
@@ -96,8 +92,8 @@ function App() {
         shadowDim={shadowDim}
         shadowSat={shadowSat}
         blendSides={blendSides}
-        swapStyle={swapStyle}
-        flipStyle={flipStyle}
+        swapStyle={initialSwapStyle}
+        flipStyle={initialFlipStyle}
       />
     );
   }
@@ -129,30 +125,6 @@ function App() {
         </span>
       </div>
 
-      <div className="swap-control">
-        <label htmlFor="swapSel"><b>Swap lane:</b></label>
-        <select
-          id="swapSel"
-          value={swapStyle}
-          onChange={e => setSwapStyle(e.target.value)}
-        >
-          <option value="orbit">hand · orbit</option>
-          <option value="hop">hand · hop over</option>
-          <option value="planar">least action · planar</option>
-          <option value="vertical">least action · over/under</option>
-          <option value="action-hop">least action · hop over</option>
-        </select>
-        <label htmlFor="flipSel" className="flip-label"><b>Flip lane:</b></label>
-        <select
-          id="flipSel"
-          value={flipStyle}
-          onChange={e => setFlipStyle(e.target.value)}
-        >
-          <option value="hand">hand</option>
-          <option value="action">least action</option>
-        </select>
-      </div>
-
       <CognitiveCube
         selectedType={selectedType}
         setSelectedType={setSelectedType}
@@ -164,8 +136,8 @@ function App() {
         shadowDim={shadowDim}
         shadowSat={shadowSat}
         blendSides={blendSides}
-        swapStyle={swapStyle}
-        flipStyle={flipStyle}
+        swapStyle={initialSwapStyle}
+        flipStyle={initialFlipStyle}
       />
     </div>
   );

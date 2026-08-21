@@ -206,9 +206,11 @@ the planner's candidates; an override matching no candidate is ignored.
 - **Lane verdict: resolved per kind by the recorded favorites** —
   action-planar for the in-place mirror and quarter-turn kinds,
   action-vertical for the 180° mirror kind, action-flip everywhere a flip
-  plays. The hand lanes and the UI swap/flip selectors are now review
-  tooling only; retiring the selectors (URL overrides stay) and folding
-  the least-action findings into the transitions brief remain to do.
+  plays. The app's lane selectors are retired and the app no longer
+  writes `swap`/`flip` into its URL (doing so silently overrode the
+  favorite lanes on every reload); `?swap=`/`?flip=` remain as review
+  overrides, and the explorer keeps its own lane controls. Folding the
+  least-action findings into the transitions brief remains to do.
 - **Default transition duration**: every favorite was judged at 1.6 s
   (the explorer's default); the app default is still 1.1 s. Decide
   whether to move to 1.6 s.
