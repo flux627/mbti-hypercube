@@ -24,16 +24,18 @@ body {
   inset: 0;
 }
 
-/* Title, selector, and key float over the render surface; the container
-   passes pointer events through so the whole page stays draggable. */
+/* Title, selector, readout, and key float over the render surface; the
+   container passes pointer events through so the whole page stays
+   draggable. Same arrangement at every size: title left and selector
+   right on the top row, the readout below the centered type name, the
+   key pinned to the bottom in two columns. */
 .overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  padding: 22px 26px;
+  inset: 0;
+  padding: 20px 26px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 14px;
   pointer-events: none;
   user-select: none;
@@ -42,9 +44,10 @@ body {
 
 .top-row {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 14px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 /* Selected type and the currently viewed side, centered along the top. */
@@ -53,7 +56,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  padding-top: 22px;
+  padding-top: 58px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -79,6 +82,8 @@ body {
 /* Viewing-side readout: left-aligned block, labels flush with the
    overlay's left margin, values indented beneath them. */
 .view-info {
+  /* clear the centered type-name band */
+  margin-top: 44px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -142,10 +147,15 @@ body {
   border-radius: 6px;
 }
 
+/* Two columns, ranks 1-4 beside 5-8, pinned to the bottom. */
 .legend {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  margin-top: auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  justify-content: start;
+  column-gap: 18px;
+  row-gap: 5px;
   font-size: 13px;
 }
 
@@ -182,23 +192,10 @@ body {
 /* Narrow screens: title and selector share the top row, the type header
    drops below them, and the key moves to the bottom where portrait
    viewports have room. */
+/* Narrow screens: same arrangement, tighter sizes. */
 @media (max-width: 700px) {
   .overlay {
-    inset: 0;
     padding: 14px 16px;
-    align-items: stretch;
-  }
-
-  /* clear the centered type-name band before the left-aligned readout */
-  .view-info {
-    margin-top: 44px;
-  }
-
-  .top-row {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
   }
 
   .overlay h1 {
@@ -208,10 +205,6 @@ body {
   #typeSel {
     font-size: 13px;
     padding: 4px 6px;
-  }
-
-  .header {
-    padding-top: 58px;
   }
 
   .type-name {
@@ -231,13 +224,7 @@ body {
     padding: 4px 10px 4px 16px;
   }
 
-  /* two columns, ranks 1-4 beside 5-8, pinned to the bottom so the key
-     stays short and the cube can sit lower */
   .legend {
-    margin-top: auto;
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(4, auto);
     column-gap: 14px;
     row-gap: 4px;
     font-size: 11px;
