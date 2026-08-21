@@ -180,3 +180,63 @@ if (bad) {
   console.error(`${bad} pair(s) where the favorite fails to pin one dance`);
   process.exit(1);
 }
+
+// The planner classifies from a quarter-snapped anchor, so signatures can
+// arise from any yaw offset of any reachable lattice state — a superset
+// of the rest-state kinds above. Every reachable signature must have a
+// favorite or be a choice-free turn kind, or the planner would fall back
+// to unconstrained scoring. BFS the lattice closure (enqueueing every
+// candidate lattice, a safe superset of what the planner can choose) and
+// sweep all four anchor offsets.
+const latKey = l => `${l.lx},${l.ly},${l.lz}`;
+const seen = new Set();
+const queue = [];
+for (const t of types) {
+  const L = initialLatticeFor(t);
+  const key = `${latKey(L)}|${t}`;
+  if (!seen.has(key)) { seen.add(key); queue.push({ L, type: t }); }
+}
+const reachableSigs = new Set();
+while (queue.length) {
+  const { L, type } = queue.shift();
+  const q0 = homePoseQuat(type, L);
+  for (let k = 0; k < 4; k++) {
+    const qA = q0.clone().premultiply(
+      new THREE.Quaternion().setFromAxisAngle(UP, (k * Math.PI) / 2),
+    );
+    for (const to of types) {
+      if (to === type) continue;
+      const danced = homeOrientation(to).parity !== latticeDet(L);
+      if (danced) {
+        const ds = ['swap-x', 'swap-z', 'flip'].map(name => {
+          const Lc = composeLattice(DANCES[name], L);
+          if (k === 0) {
+            const nk = `${latKey(Lc)}|${to}`;
+            if (!seen.has(nk)) { seen.add(nk); queue.push({ L: Lc, type: to }); }
+          }
+          const res = residualOf(qA, homePoseQuat(to, Lc));
+          const deg = Math.round(res.angle * 180 / Math.PI);
+          return { name, deg, cls: deg === 0 ? (name === 'flip' ? 'flip' : 'swap') : axisClass(res.axis, deg) };
+        });
+        const min = ds.reduce((m, d) => (d.deg < m.deg ? d : m), ds[0]);
+        reachableSigs.add(`mirror|${min.deg}|${min.cls}`);
+      } else {
+        const res = residualOf(qA, homePoseQuat(to, L));
+        const deg = Math.round(res.angle * 180 / Math.PI);
+        reachableSigs.add(`turn|${deg}|${deg === 0 ? 'none' : axisClass(res.axis, deg)}`);
+      }
+    }
+  }
+}
+let uncovered = 0;
+for (const sig of [...reachableSigs].sort()) {
+  const fine = KIND_FAVORITES[sig]
+    || sig.startsWith('turn|90') || sig === 'turn|0|none';
+  if (!fine) uncovered += 1;
+  console.log(`anchored sig ${sig.padEnd(24)} ${fine ? 'covered' : 'UNCOVERED'}`);
+}
+console.log(`${reachableSigs.size} anchor-reachable signatures from ${seen.size} closure states`);
+if (uncovered) {
+  console.error(`${uncovered} reachable signature(s) lack a favorite`);
+  process.exit(1);
+}

@@ -722,15 +722,29 @@ function CubeScene({
 
     const parity = homeOrientation(selectedType).parity;
     const L = latticeRef.current;
-    // The transition's KIND is classified from the canonical rest
-    // relationship — the previous type's home pose under the current
-    // lattice and camera — never from the live pose: auto-spin, a manual
-    // orbit, or a mid-flight retarget all add an arbitrary yaw that would
-    // otherwise skew the signature (mirror|113|down instead of
-    // mirror|90|down) and silently miss the favorites table. The actual
-    // residuals used for animation and scoring still come from the live
-    // pose below.
-    const qCanon = homePoseQuat(prevTypeRef.current, camera, L);
+    // The transition's KIND is classified from a canonical anchor, never
+    // from the live pose: auto-spin, a manual orbit, or a mid-flight
+    // retarget all add an arbitrary yaw that would otherwise skew the
+    // signature (mirror|113|down instead of mirror|90|down) and silently
+    // miss the favorites table. The anchor is the previous type's home
+    // pose under the current lattice and camera, world-yawed by whichever
+    // quarter turn lies nearest the live pose — so a deliberate orbit to
+    // another face re-anchors classification to the face being looked at
+    // (selecting a type on the viewed face is an in-place kind, not a
+    // 180° one), while the leftover drift stays under 45° and rides the
+    // concurrent rotation. The actual residuals used for animation and
+    // scoring still come from the live pose below.
+    let qCanon = homePoseQuat(prevTypeRef.current, camera, L);
+    {
+      let bestAng = Infinity;
+      let bestQ = qCanon;
+      for (let k = 0; k < 4; k++) {
+        const q = qCanon.clone().premultiply(_resQ.setFromAxisAngle(UP, k * Math.PI / 2));
+        const ang = q.angleTo(g.quaternion);
+        if (ang < bestAng) { bestAng = ang; bestQ = q; }
+      }
+      qCanon = bestQ;
+    }
     prevTypeRef.current = selectedType;
 
     if (parity !== latticeDet(L)) {

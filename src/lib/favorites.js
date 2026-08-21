@@ -23,6 +23,14 @@
 // toward the viewer, else screen-right).
 export const KIND_FAVORITES = {
   'mirror|180|diagonal': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
+  // the three 180° mirror kinds below are unreachable from canonical
+  // anchors (the coverage sweep in scripts/enumerate-kinds.mjs proves the
+  // reachable set), but a live camera near a threshold boundary can bin
+  // the axis class differently — these entries make that degrade to the
+  // same recorded 180° treatment instead of an unconstrained fallback
+  'mirror|180|vertical': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|lateral': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
+  'mirror|180|normal': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
   'mirror|90|up': { match: 'kind', swapLane: 'planar', flipLane: 'action' },
   'mirror|90|down': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'vertical', flipLane: 'action' },
   'mirror|0|swap': { match: 'kind', whenSwap: { db: 1 }, swapLane: 'planar', flipLane: 'action' },
