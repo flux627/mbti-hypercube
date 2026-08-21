@@ -32,7 +32,12 @@ export const KIND_FAVORITES = {
   'mirror|180|lateral': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
   'mirror|180|normal': { match: 'kind', tieRole: 'swap-normal', swapLane: 'vertical', flipLane: 'action' },
   'mirror|90|up': { match: 'kind', swapLane: 'planar', flipLane: 'action' },
-  'mirror|90|down': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'vertical', flipLane: 'action' },
+  // swapLane here mirrors mirror|90|up: every pair's two directions land
+  // in the up and down kinds respectively, so a differing swap lane would
+  // make a transition and its reverse play different choreographies (the
+  // recorded 'vertical' was leftover control state — the judged example
+  // played the flip)
+  'mirror|90|down': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|0|swap': { match: 'kind', whenSwap: { db: 1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|0|flip': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   'turn|180|vertical': { dd: -1 },
