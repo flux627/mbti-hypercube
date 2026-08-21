@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGPURenderer HDR spike — Cognitive Cube</title>
+<style>
+  html, body { background: #0a0a0a; margin: 0; }
+  body {
+    font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+    color: #e8e8e8;
+    padding: 22px 26px;
+  }
+  h1 { font-size: 19px; font-weight: 600; letter-spacing: 0.03em; margin: 0 0 6px; }
+  p { color: #a8a8a8; font-size: 13px; max-width: 62ch; line-height: 1.5; margin: 6px 0; }
+  #status { font-size: 12.5px; color: #9a9a9a; margin: 10px 0 16px; line-height: 1.6; }
+  #status b { color: #d6d6d6; font-weight: 600; }
+  .err { color: #ff9a7a; }
+  #wrap { max-width: 720px; }
+  canvas { width: 100%; height: 360px; display: block; }
+  .labels { display: grid; grid-template-columns: 1fr 1fr; max-width: 720px;
+    font-size: 12px; color: #808080; text-align: center; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>three.js WebGPURenderer HDR spike</h1>
+<p>
+  A three.js <code>WebGPURenderer</code> (r185) with
+  <code>outputType: HalfFloatType</code> — the canvas is
+  <code>rgba16float</code> + <code>display-p3</code> + extended tone
+  mapping, the same configuration as <code>/hdr.html</code>, but rendered
+  through three's TSL node pipeline instead of raw WGSL. If your browser
+  and display support EDR, the <b>right plane glows brighter</b> than the
+  left one (which is SDR max white).
+</p>
+<div id="status">initializing…</div>
+<div id="wrap"></div>
+<div class="labels"><div>1× (SDR max white)</div><div>2× (EDR)</div></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "./node_modules/three/build/three.webgpu.js",
+    "three/tsl": "./node_modules/three/build/three.tsl.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { vec3 } from 'three/tsl';
+
+const status = document.getElementById('status');
+const lines = [];
+const say = (k, v, bad) => lines.push(`<b>${k}</b>: ${bad ? `<span class="err">${v}</span>` : v}`);
+const flush = () => { status.innerHTML = lines.join('<br>'); };
+window.__spike = { ready: false };
+
+const hdrDisplay = matchMedia('(dynamic-range: high)').matches;
+say('display reports', hdrDisplay ? 'high dynamic range' : 'standard dynamic range', !hdrDisplay);
+
+// Probe the HDR canvas configuration with raw WebGPU first, exactly as
+// /hdr.html does: software adapters (SwiftShader) accept configure() but
+// fail float16 texture creation, so getCurrentTexture inside an error
+// scope is the reliable test. Only if the probe passes do we hand three
+// the HalfFloatType output — its pipelines all target the canvas format,
+// so a post-hoc format fallback would break every pipeline.
+async function probeHDR() {
+  if (!navigator.gpu) throw new Error('WebGPU not available in this browser');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error('WebGPU adapter unavailable');
+  const info = adapter.info || {};
+  say('WebGPU adapter', [info.vendor, info.architecture, info.device].filter(Boolean).join(' / ') || 'available');
+  const device = await adapter.requestDevice();
+  const probeCanvas = document.createElement('canvas');
+  const ctx = probeCanvas.getContext('webgpu');
+  device.pushErrorScope('validation');
+  ctx.configure({
+    device,
+    format: 'rgba16float',
+    colorSpace: 'display-p3',
+    toneMapping: { mode: 'extended' },
+    alphaMode: 'opaque',
+  });
+  ctx.getCurrentTexture();
+  const err = await device.popErrorScope();
+  ctx.unconfigure();
+  device.destroy();
+  if (err) say('HDR probe', `rgba16float + extended failed (${err.message.split(' - ')[0]}) — rendering SDR`, true);
+  return !err;
+}
+
+try {
+  const hdrOK = await probeHDR();
+
+  const renderer = new THREE.WebGPURenderer({
+    antialias: true,
+    ...(hdrOK ? { outputType: THREE.HalfFloatType } : {}),
+  });
+  await renderer.init();
+
+  const isWebGPU = renderer.backend.isWebGPUBackend === true;
+  say('three backend', isWebGPU ? 'WebGPU' : 'WebGL2 fallback', !isWebGPU);
+
+  let toneMappingMode = 'standard';
+  if (hdrOK && isWebGPU) {
+    // three configures the context as rgba16float + extended but leaves
+    // colorSpace at its 'srgb' default; reconfigure to display-p3, the
+    // app's wide-gamut reinterpretation (same call /hdr.html makes).
+    const { device } = renderer.backend;
+    const context = renderer.backend.context;
+    context.configure({
+      device,
+      format: 'rgba16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      colorSpace: 'display-p3',
+      toneMapping: { mode: 'extended' },
+      alphaMode: 'opaque',
+    });
+    const cfg = context.getConfiguration ? context.getConfiguration() : null;
+    toneMappingMode = cfg?.toneMapping?.mode ?? 'unknown (browser ignored the option)';
+    say('canvas', `${cfg?.format ?? 'rgba16float'} / ${cfg?.colorSpace ?? 'display-p3'}`);
+    say('canvas tone mapping', toneMappingMode, toneMappingMode !== 'extended');
+  }
+  say('verdict', hdrOK && isWebGPU && toneMappingMode === 'extended' && hdrDisplay
+    ? 'the right plane should clearly outshine the left one'
+    : 'expect both planes to look identical (clamped to SDR)',
+  !(hdrOK && isWebGPU && toneMappingMode === 'extended' && hdrDisplay));
+  flush();
+
+  const wrap = document.getElementById('wrap');
+  wrap.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0a);
+  const camera = new THREE.OrthographicCamera(-2, 2, 1, -1, 0.1, 10);
+  camera.position.z = 1;
+
+  // Working space is linear-sRGB; the renderer's output transform applies
+  // the (unclamped) sRGB OETF. OETF(1.0) = 1.0 → SDR max; the boosted
+  // plane wants a *canvas* value of 2.0, i.e. linear EOTF(2.0) ≈ 4.954 —
+  // a 2× multiplier in encoded space, matching /hdr.html's raw values.
+  const linearFor = v => Math.pow((v + 0.055) / 1.055, 2.4);
+  const mkPlane = (x, value) => {
+    const mat = new THREE.MeshBasicNodeMaterial();
+    mat.colorNode = vec3(value, value, value);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), mat);
+    mesh.position.x = x;
+    scene.add(mesh);
+  };
+  mkPlane(-1, linearFor(1));
+  mkPlane(1, linearFor(2));
+
+  const resize = () => {
+    const w = wrap.clientWidth;
+    renderer.setPixelRatio(devicePixelRatio || 1);
+    renderer.setSize(w, 360);
+  };
+  resize();
+  addEventListener('resize', resize);
+  renderer.setAnimationLoop(() => renderer.render(scene, camera));
+
+  window.__spike = {
+    ready: true,
+    hdrOK,
+    isWebGPU,
+    toneMappingMode,
+    hdrDisplay,
+    three: THREE.REVISION,
+  };
+} catch (e) {
+  say('error', e.message, true);
+  flush();
+  window.__spike = { ready: true, error: e.message };
+}
+</script>
+</body>
+</html>
