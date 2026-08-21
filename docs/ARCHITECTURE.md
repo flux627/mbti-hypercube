@@ -257,3 +257,16 @@ the planner's candidates; an override matching no candidate is ignored.
   a fade is possible if wanted.
 - `?dur=` and the lane selectors are review tooling; decide what stays
   user-facing when the design settles.
+- **HDR**: the app renders wide-gamut (the canvas drawing buffer is
+  reinterpreted as Display P3, `?p3=0` reverts), which covers chroma but
+  not brightness headroom. True HDR needs a WebGPU canvas with
+  `rgba16float` + extended tone mapping — unavailable to WebGL.
+  `/hdr.html` is a standalone raw-WebGPU probe of that path: rank-color
+  patches at 1×/2×/4×/pulsing against an SDR-white reference, with a
+  status line naming which link in the chain (browser, adapter, display)
+  clamps. Verified working on Chrome + Metal; software adapters
+  (SwiftShader) fail to present float16 so the page falls back to an SDR
+  canvas when the probe errors. Adopting HDR in the app proper would mean
+  a WebGPU port: three's WebGPURenderer with the pole shader rewritten as
+  TSL nodes and a replacement for troika text — a large lift, only worth
+  it if the probe convinces.
