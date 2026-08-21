@@ -626,6 +626,9 @@ function CubeScene({
   const draggingRef = useRef(false);
   const animRef = useRef(null);
   const mountedRef = useRef(false);
+  // the type whose home pose the cube last settled toward — the anchor for
+  // drift-free kind classification
+  const prevTypeRef = useRef(selectedType);
   const { gl, camera } = useThree();
 
   // The lattice: which reflection the pole arrangement currently realizes.
@@ -719,6 +722,16 @@ function CubeScene({
 
     const parity = homeOrientation(selectedType).parity;
     const L = latticeRef.current;
+    // The transition's KIND is classified from the canonical rest
+    // relationship — the previous type's home pose under the current
+    // lattice and camera — never from the live pose: auto-spin, a manual
+    // orbit, or a mid-flight retarget all add an arbitrary yaw that would
+    // otherwise skew the signature (mirror|113|down instead of
+    // mirror|90|down) and silently miss the favorites table. The actual
+    // residuals used for animation and scoring still come from the live
+    // pose below.
+    const qCanon = homePoseQuat(prevTypeRef.current, camera, L);
+    prevTypeRef.current = selectedType;
 
     if (parity !== latticeDet(L)) {
       // per-dance residuals first: the smallest one defines the
@@ -728,20 +741,19 @@ function CubeScene({
         const Lc = composeLattice(DANCES[name], L);
         const q = homePoseQuat(selectedType, camera, Lc);
         const { axis, angle } = residualOf(g.quaternion, q, camera);
-        base.push({ name, Lc, q, axis, angle });
+        base.push({ name, Lc, q, axis, angle, canon: residualOf(qCanon, q, camera) });
       }
       const descriptors = base.map(b => {
-        const deg = Math.round(b.angle * 180 / Math.PI);
+        const deg = Math.round(b.canon.angle * 180 / Math.PI);
         return {
           name: b.name,
           deg,
           cls: deg === 0
             ? (b.name === 'flip' ? 'flip' : 'swap')
-            : residualAxisClass(b.axis, b.angle, camera),
+            : residualAxisClass(b.canon.axis, b.canon.angle, camera),
         };
       });
-      const minBase = base.reduce((m, b) => (b.angle < m.angle - 1e-9 ? b : m), base[0]);
-      const minD = descriptors[base.indexOf(minBase)];
+      const minD = descriptors.reduce((m, d) => (d.deg < m.deg ? d : m), descriptors[0]);
       const sig = `mirror|${minD.deg}|${minD.cls}`;
       const fav = PLAN_MODE === 'motion' ? KIND_FAVORITES[sig] || null : null;
       const targetNormalAxis = homeOrientation(selectedType).normal[0] !== 0 ? 'x' : 'z';
@@ -821,8 +833,9 @@ function CubeScene({
       const { axis, angle } = residualOf(g.quaternion, q, camera);
       // for a near-180° pure rotation both directions are equal cost; the
       // kind's recorded favorite picks one, ?dd= overrides
-      const deg = Math.round(angle * 180 / Math.PI);
-      const sig = `turn|${deg}|${deg === 0 ? 'none' : residualAxisClass(axis, angle, camera)}`;
+      const canon = residualOf(qCanon, q, camera);
+      const deg = Math.round(canon.angle * 180 / Math.PI);
+      const sig = `turn|${deg}|${deg === 0 ? 'none' : residualAxisClass(canon.axis, canon.angle, camera)}`;
       const fav = PLAN_MODE === 'motion' ? KIND_FAVORITES[sig] || null : null;
       const dir = FORCE.dir ?? fav?.dd ?? null;
       const resAngle = dir === -1 && angle > 2.96 ? angle - 2 * Math.PI : angle;
