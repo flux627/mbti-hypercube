@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import TypeSelector from './components/TypeSelector';
 import CognitiveCube, { EXPONENT_MIN, EXPONENT_MAX, animClock } from './components/CognitiveCube';
-import { TYPE_STACKS, RANK_COLORS, RANK_NAMES } from './lib/cubeModel.js';
+import {
+  TYPE_STACKS, RANK_COLORS, FUNCTION_NAMES, cornerColor, flipAttitude,
+} from './lib/cubeModel.js';
 import './App.css';
 
 // View state can be seeded from the URL: ?type=ENTP&yaw=45&spin=0&cam=5,-5,5&n=5
@@ -73,72 +75,54 @@ function App() {
     return () => clearTimeout(id);
   }, []);
 
-  useEffect(() => {
-    if (bare) document.body.classList.add('bare');
-  }, []);
-
   const stack = TYPE_STACKS[selectedType];
 
-  if (bare) {
-    return (
-      <CognitiveCube
-        selectedType={selectedType}
-        setSelectedType={setSelectedType}
-        initialYaw={initialYaw}
-        spin={initialSpin}
-        cameraPosition={initialCamera}
-        exponent={exponent}
-        lineOpacity={lineOpacity}
-        shadowDim={shadowDim}
-        shadowSat={shadowSat}
-        blendSides={blendSides}
-        swapStyle={initialSwapStyle}
-        flipStyle={initialFlipStyle}
-      />
-    );
-  }
+  const cube = (
+    <CognitiveCube
+      selectedType={selectedType}
+      setSelectedType={setSelectedType}
+      initialYaw={initialYaw}
+      spin={initialSpin}
+      cameraPosition={initialCamera}
+      exponent={exponent}
+      lineOpacity={lineOpacity}
+      shadowDim={shadowDim}
+      shadowSat={shadowSat}
+      blendSides={blendSides}
+      swapStyle={initialSwapStyle}
+      flipStyle={initialFlipStyle}
+    />
+  );
+
+  if (bare) return cube;
+
+  // The key: ranks 1–4 are the stack, 5–8 the attitude-flipped shadows,
+  // each swatch matching the corner color the cube itself paints.
+  const keyRows = [
+    ...stack.map((fn, i) => ({ rank: i + 1, fn, color: RANK_COLORS[i] })),
+    ...stack.map((fn, i) => {
+      const sh = flipAttitude(fn);
+      return { rank: i + 5, fn: sh, color: cornerColor(selectedType, sh, shadowDim, shadowSat) };
+    }),
+  ];
 
   return (
     <div className="app">
-      <h2>Cognitive Cube</h2>
-      <p className="hint">
-        The eight MBTI cognitive functions sit at the corners of a cube, opposites at
-        opposite corners. Vertically stacked pairs — Si/Ne, Fe/Ti, Ni/Se, Te/Fi —
-        form four continuous poles, kept seamless while every other edge rounds
-        off. Each side face carries the four types that share a
-        function set, each at the corner of its dominant function. Select a type
-        (dropdown, or click a quadrant) to paint the cube: one pole runs
-        dominant&nbsp;→&nbsp;inferior, the other auxiliary&nbsp;→&nbsp;tertiary,
-        and the shadow poles behind carry the same hues dimmed (ranks 5–8).
-      </p>
-
-      <div className="type-selector-container">
-        <label htmlFor="typeSel"><b>Type:</b></label>
+      <div className="cube-layer">{cube}</div>
+      <div className="overlay">
+        <h1>Cognitive Cube</h1>
         <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />
-        <span className="legend">
-          {stack.map((fn, i) => (
-            <span key={fn} className="legend-item">
-              <span className="swatch" style={{ background: RANK_COLORS[i] }} />
-              {i + 1}&nbsp;{RANK_NAMES[i]}: <b>{fn}</b>
-            </span>
+        <div className="legend">
+          {keyRows.map(({ rank, fn, color }) => (
+            <div key={rank} className="legend-row">
+              <span className="rank">{rank}</span>
+              <span className="swatch" style={{ background: color }} />
+              <span className="fname">{FUNCTION_NAMES[fn]}</span>
+              <span className="fcode">{fn}</span>
+            </div>
           ))}
-        </span>
+        </div>
       </div>
-
-      <CognitiveCube
-        selectedType={selectedType}
-        setSelectedType={setSelectedType}
-        initialYaw={initialYaw}
-        spin={initialSpin}
-        cameraPosition={initialCamera}
-        exponent={exponent}
-        lineOpacity={lineOpacity}
-        shadowDim={shadowDim}
-        shadowSat={shadowSat}
-        blendSides={blendSides}
-        swapStyle={initialSwapStyle}
-        flipStyle={initialFlipStyle}
-      />
     </div>
   );
 }

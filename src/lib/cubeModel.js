@@ -24,6 +24,13 @@ export const CORNERS = {
 // Stack rank → color: dominant, auxiliary, tertiary, inferior.
 // Dominant→inferior reads red→blue, auxiliary→tertiary reads orange→cyan.
 export const RANK_COLORS = ['#ff0000', '#ff8a00', '#00aeff', '#0000ff'];
+
+export const FUNCTION_NAMES = {
+  Ni: 'Introverted Intuition', Ne: 'Extraverted Intuition',
+  Si: 'Introverted Sensing', Se: 'Extraverted Sensing',
+  Ti: 'Introverted Thinking', Te: 'Extraverted Thinking',
+  Fi: 'Introverted Feeling', Fe: 'Extraverted Feeling',
+};
 export const RANK_NAMES = ['Dominant', 'Auxiliary', 'Tertiary', 'Inferior'];
 
 // Each face has a canonical UV frame: c00/c10/c01/c11 name the functions at

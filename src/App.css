@@ -1,58 +1,96 @@
+html, body, #root {
+  height: 100%;
+}
+
 html, body {
-  background: #ffffff !important;
-}
-
-body {
-  font-family: Arial, sans-serif;
+  background: #0a0a0a;
   margin: 0;
-  padding: 20px;
-}
-
-/* ?bare=1 — cube only, for the Transition Explorer iframe */
-html:has(body.bare), body.bare {
-  background: #0a0a0a !important;
   padding: 0;
 }
 
+body {
+  font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+  color: #e8e8e8;
+  color-scheme: dark;
+}
+
 .app {
-  max-width: 100%;
+  position: relative;
+  height: 100%;
 }
 
-h2 {
-  margin-bottom: 10px;
+.cube-layer {
+  position: absolute;
+  inset: 0;
 }
 
-.hint {
-  color: #444;
-  margin: 6px 0 14px;
+/* Title, selector, and key float over the render surface; the container
+   passes pointer events through so the whole page stays draggable. */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.type-selector-container {
-  margin-bottom: 14px;
-}
-
-.type-selector-container label {
-  margin-right: 8px;
+.overlay h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #f2f2f2;
 }
 
 #typeSel {
-  font-size: 16px;
+  pointer-events: auto;
+  font-size: 14px;
+  padding: 5px 8px;
+  background: #161616;
+  color: #e8e8e8;
+  border: 1px solid #333;
+  border-radius: 6px;
 }
 
 .legend {
-  margin-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
 }
 
-.legend-item {
-  margin-right: 14px;
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   white-space: nowrap;
 }
 
+.legend-row .rank {
+  width: 1ch;
+  text-align: right;
+  color: #9a9a9a;
+  font-variant-numeric: tabular-nums;
+}
+
 .swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  margin-right: 4px;
-  vertical-align: baseline;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.fname {
+  color: #d6d6d6;
+}
+
+.fcode {
+  color: #808080;
+  font-size: 12px;
 }

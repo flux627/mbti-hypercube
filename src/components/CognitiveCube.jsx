@@ -1119,7 +1119,7 @@ export default function CognitiveCube({
   swapStyle = 'orbit', flipStyle = 'hand',
 }) {
   return (
-    <div style={{ width: '100%', height: '600px' }}>
+    <div style={{ width: '100%', height: '100%' }}>
       <Canvas camera={{ position: cameraPosition, fov: 50 }} style={{ background: '#0a0a0a' }}>
         <CubeScene
           selectedType={selectedType}
