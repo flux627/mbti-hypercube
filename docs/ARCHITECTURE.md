@@ -126,7 +126,13 @@ intersect, and every transition is one slerp plus at most one dance.
   in `src/lib/favorites.js` by *role* so they generalize across each
   kind's pairs; `npm run kinds` validates that every favorite pins
   exactly one dance on every pair of its kind. Re-tuning = re-record in
-  the explorer, re-encode the table.
+  the explorer, re-encode the table. The fixed-handedness rule runs
+  through everything directional: rotations play clockwise seen from
+  their axis's positive side (dd −1 about canonicalized axes; quarter
+  kinds prefer the clockwise carrier so pairs cycle rather than
+  shuttle), and the in-place swap's orbit side is probed per pair
+  (`db: 'cw'` → `danceYawSense`) because the lane-frame sign's screen
+  sense flips with the swap axis.
 - Dance evaluation is table-driven: `lanes.generated.js` holds per-lane
   A/B tracks of `[a, b, y, rot]` half-center rows (a = swap/split axis,
   b = other horizontal, y vertical, rot about y for 'yaw' / about b for

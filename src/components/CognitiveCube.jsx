@@ -808,9 +808,21 @@ function CubeScene({
       // favorite's direction signs apply per dance type (whenSwap /
       // whenFlip); whatever is left free, the motion score decides
       const allowed = FORCE.dance ? [FORCE.dance] : favNames;
+      // resolve a db of 'cw' to the concrete orbit side whose sweep is
+      // clockwise from the top, probed on the allowed dance
+      let cwB = null;
+      if (FORCE.b === null && fav?.whenSwap?.db === 'cw' && allowed?.length === 1 && allowed[0] !== 'flip') {
+        const probe = candidates.find(c =>
+          c.name === allowed[0] && c.bulgeSign === 1 && c.ySign === 1);
+        if (probe) {
+          const s = danceYawSense(probe.dance, g.quaternion, probe.axis, probe.angle);
+          cwB = s < 0 ? 1 : -1;
+        }
+      }
       let pool = candidates.filter(c => {
         const f = (c.name === 'flip' ? fav?.whenFlip : fav?.whenSwap) || {};
-        const b = FORCE.b ?? f.db ?? null;
+        const fb = f.db === 'cw' ? cwB : f.db;
+        const b = FORCE.b ?? fb ?? null;
         const y = FORCE.y ?? f.dy ?? null;
         const d = FORCE.dir ?? f.dd ?? fav?.dd ?? null;
         return (!allowed || allowed.includes(c.name))
@@ -934,6 +946,41 @@ function CubeScene({
       if (!pg || !from) continue;
       danceLocalPose(dance, lane, from, pg.position, pg.quaternion);
     }
+  };
+
+  // The angular sense of a candidate composite's pole motion about
+  // world-up: positive = counterclockwise seen from the top. Used to
+  // resolve a favorite's db 'cw' — the orbit side whose sweep reads
+  // clockwise from above — since the lane-frame sign's screen sense flips
+  // with the swap axis.
+  const danceYawSense = (dance, fromQ, resAxis, resAngle) => {
+    const G = new THREE.Quaternion();
+    const spin = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const rowA = [0, 0, 0, 0];
+    const rowB = [0, 0, 0, 0];
+    const prev = {};
+    let sense = 0;
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      spin.setFromAxisAngle(resAxis, resAngle * easeInOut(t));
+      G.copy(fromQ).multiply(spin);
+      const lane = sampleLane(dance.lane, t, rowA, rowB);
+      for (const pole of POLES) {
+        const from = dance.fromRests[pole.key];
+        danceLocalPose(dance, lane, from, pos, quat);
+        pos.applyQuaternion(G);
+        const p = prev[pole.key];
+        if (p) {
+          sense += p.z * pos.x - p.x * pos.z; // cross(prev, pos) · up
+          p.copy(pos);
+        } else {
+          prev[pole.key] = pos.clone();
+        }
+      }
+    }
+    return Math.sign(sense);
   };
 
   // The total world motion — translation plus gyration-weighted rotation of

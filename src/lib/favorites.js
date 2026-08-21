@@ -46,7 +46,12 @@ export const KIND_FAVORITES = {
   // one full turn.
   'mirror|90|up': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   'mirror|90|down': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
-  'mirror|0|swap': { match: 'kind', whenSwap: { db: 1 }, swapLane: 'planar', flipLane: 'action' },
+  // db 'cw' = choose the orbit side whose angular sense about world-up is
+  // clockwise seen from the top, probed per pair — a fixed sign can't
+  // work here because db is a lane-frame sign whose screen sense flips
+  // with the swap axis (the (a, b, y) basis is left-handed for swap-x and
+  // right-handed for swap-z)
+  'mirror|0|swap': { match: 'kind', whenSwap: { db: 'cw' }, swapLane: 'planar', flipLane: 'action' },
   'mirror|0|flip': { match: 'kind', whenFlip: { dy: -1 }, swapLane: 'planar', flipLane: 'action' },
   // all four align with the handedness rule; the lateral and diagonal
   // signs were originally recorded as +1, but that recording predated
