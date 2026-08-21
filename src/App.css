@@ -164,6 +164,12 @@ body {
   align-items: center;
   gap: 8px;
   white-space: nowrap;
+  transition: opacity 0.35s;
+}
+
+/* functions not on the side currently facing the camera */
+.legend-row.out-of-view {
+  opacity: 0.35;
 }
 
 .legend-row .rank {

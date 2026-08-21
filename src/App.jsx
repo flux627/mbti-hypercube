@@ -75,6 +75,15 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 const shorthand = type => TYPE_STACKS[type][0] + TYPE_STACKS[type][1];
 
+// Which key ranks are on the currently viewed side — its face's four
+// corners.
+const VIEW_RANKS = {
+  Preferred: [1, 2, 3, 4],
+  "Dominant's Complement": [1, 4, 6, 7],
+  "Auxiliary's Complement": [2, 3, 5, 8],
+  Shadow: [5, 6, 7, 8],
+};
+
 // The related types listed for each viewed side, derived from the selected
 // type's dominant/auxiliary pair. Each finder is unique: every function is
 // dominant for exactly two types and auxiliary for exactly two.
@@ -191,7 +200,12 @@ function App() {
         </div>
         <div className="legend">
           {keyRows.map(({ rank, fn, color }) => (
-            <div key={rank} className="legend-row">
+            <div
+              key={rank}
+              className={`legend-row${
+                VIEW_RANKS[viewedSide] && !VIEW_RANKS[viewedSide].includes(rank)
+                  ? ' out-of-view' : ''}`}
+            >
               <span className="rank">{rank}</span>
               <span className="swatch" style={{ background: swatchColor(color) }} />
               <span className="fname">{FUNCTION_NAMES[fn]}</span>
