@@ -21,12 +21,12 @@
     grid-column: 2; display: grid; grid-template-columns: repeat(5, 1fr);
     font-size: 11.5px; color: #808080; text-align: center; margin-bottom: 4px;
   }
-  .rowlabels { display: grid; grid-template-rows: repeat(4, 1fr); }
+  .rowlabels { display: grid; grid-template-rows: repeat(5, 1fr); }
   .rowlabels div {
     font-size: 11.5px; color: #808080; display: flex; align-items: center;
     justify-content: flex-end; text-align: right;
   }
-  canvas { width: 100%; height: 320px; display: block; }
+  canvas { width: 100%; height: 400px; display: block; }
   .err { color: #ff9a7a; }
 </style>
 </head>
@@ -47,11 +47,20 @@
     <div>white</div><div>rank 1</div><div>rank 2</div><div>rank 3</div><div>rank 4</div>
   </div>
   <div class="rowlabels">
-    <div>1× (SDR max)</div><div>2×</div><div>4×</div><div>pulse 1–4×</div>
+    <div>1× (SDR max)</div><div>2×</div><div>4×</div><div>pulse 1–4×</div><div>ramp 1×→4×</div>
   </div>
   <canvas id="c"></canvas>
 </div>
-<p style="margin-top:16px"><a href="/">← back to the cube</a></p>
+<p>
+  The bottom ramp measures your headroom: white brightens continuously
+  from 1× (left) to 4× (right), with dark ticks at 2× and 3×. The point
+  where it stops getting brighter is the display's current EDR headroom.
+  It moves with screen brightness — lower the brightness and the flat
+  part should shrink; at max brightness there is usually no headroom at
+  all.
+</p>
+<p id="cslink"></p>
+<p><a href="/">← back to the cube</a></p>
 
 <script type="module">
 const status = document.getElementById('status');
@@ -62,6 +71,14 @@ const flush = () => { status.innerHTML = lines.join('<br>'); };
 const hdrDisplay = matchMedia('(dynamic-range: high)').matches;
 const p3Display = matchMedia('(color-gamut: p3)').matches;
 say('display reports', `${hdrDisplay ? 'high dynamic range' : 'standard dynamic range'}, ${p3Display ? 'P3 gamut' : 'sRGB gamut'}`, !hdrDisplay);
+
+// ?cs=srgb renders the same values in the srgb color space instead of
+// display-p3 — an A/B for browsers whose clamping distorts hue
+const colorSpace = new URLSearchParams(location.search).get('cs') === 'srgb' ? 'srgb' : 'display-p3';
+say('canvas color space', colorSpace);
+document.getElementById('cslink').innerHTML = colorSpace === 'srgb'
+  ? '<a href="?">switch canvas to display-p3</a>'
+  : '<a href="?cs=srgb">switch canvas to srgb (A/B for hue-distorting clamp)</a>';
 
 try {
   if (!navigator.gpu) throw new Error('WebGPU not available in this browser');
@@ -82,7 +99,7 @@ try {
   ctx.configure({
     device,
     format: fmt,
-    colorSpace: 'display-p3',
+    colorSpace,
     toneMapping: { mode: 'extended' },
     alphaMode: 'opaque',
   });
@@ -117,8 +134,19 @@ try {
 
     @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
       let uv = pos.xy / u.res;
+      let row = u32(clamp(uv.y, 0.0, 0.999) * 5.0);
+      let fy = fract(uv.y * 5.0);
+      if (fy < 0.03 || fy > 0.97) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+      // bottom row: a continuous white headroom ramp, 1x at the left edge
+      // to 4x at the right, with dark ticks at 2x and 3x
+      if (row == 4u) {
+        let m = 1.0 + 3.0 * uv.x;
+        if (abs(uv.x - 1.0 / 3.0) < 0.0015 || abs(uv.x - 2.0 / 3.0) < 0.0015) {
+          return vec4f(0.0, 0.0, 0.0, 1.0);
+        }
+        return vec4f(vec3f(m, m, m), 1.0);
+      }
       let col = u32(clamp(uv.x, 0.0, 0.999) * 5.0);
-      let row = u32(clamp(uv.y, 0.0, 0.999) * 4.0);
       var c = vec3f(1.0, 1.0, 1.0);
       if (col == 1u) { c = vec3f(1.0, 0.0, 0.0); }
       else if (col == 2u) { c = vec3f(1.0, 0.54, 0.0); }
@@ -129,10 +157,7 @@ try {
       else if (row == 2u) { m = 4.0; }
       else if (row == 3u) { m = 1.0 + (0.5 + 0.5 * sin(u.time * 2.0)) * 3.0; }
       let fx = fract(uv.x * 5.0);
-      let fy = fract(uv.y * 4.0);
-      if (fx < 0.015 || fx > 0.985 || fy < 0.03 || fy > 0.97) {
-        return vec4f(0.0, 0.0, 0.0, 1.0);
-      }
+      if (fx < 0.015 || fx > 0.985) { return vec4f(0.0, 0.0, 0.0, 1.0); }
       return vec4f(c * m, 1.0);
     }
   ` });

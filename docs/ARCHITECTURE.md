@@ -264,9 +264,18 @@ the planner's candidates; an override matching no candidate is ignored.
   `/hdr.html` is a standalone raw-WebGPU probe of that path: rank-color
   patches at 1×/2×/4×/pulsing against an SDR-white reference, with a
   status line naming which link in the chain (browser, adapter, display)
-  clamps. Verified working on Chrome + Metal; software adapters
-  (SwiftShader) fail to present float16 so the page falls back to an SDR
-  canvas when the probe errors. Adopting HDR in the app proper would mean
-  a WebGPU port: three's WebGPURenderer with the pole shader rewritten as
-  TSL nodes and a replacement for troika text — a large lift, only worth
-  it if the probe convinces.
+  clamps, a white 1×→4× ramp for reading off the actual headroom, and
+  `?cs=srgb` to A/B the canvas color space. Software adapters
+  (SwiftShader) fail to present float16, so the page falls back to an SDR
+  canvas when the probe errors. Observed on real devices (2026-08):
+  WebKit — macOS Safari, iOS Safari, and iOS Chrome (WebKit inside) —
+  shows genuine EDR brightness, capped by the display's current headroom
+  (≈2× at typical brightness; headroom scales inversely with the screen
+  brightness setting). macOS Chrome on the same machine reported the
+  display as SDR, offered no headroom, and clamps per-channel, which
+  distorts hue (orange ×2 → yellow) rather than just flattening.
+  Adopting HDR in the app proper would mean a WebGPU port: three's
+  WebGPURenderer with the pole shader rewritten as TSL nodes and a
+  replacement for troika text — a large lift; any real design should cap
+  boost near 2× and gate on `dynamic-range: high` so clamping browsers
+  never see >1.0 values.
