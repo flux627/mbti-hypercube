@@ -1096,7 +1096,9 @@ function CubeScene({
       }
     } else {
       applyRests();
-      if (autoRotate) g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * 0.2));
+      // negative about +Y: clockwise seen from above, matching the
+      // transition system's handedness rule
+      if (autoRotate) g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * -0.2));
     }
     if (onViewedSide) trackViewedSide(g);
   });
