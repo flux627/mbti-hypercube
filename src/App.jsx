@@ -62,6 +62,8 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
 
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
+  // which side of the cube fronts the camera, relative to the selected type
+  const [viewedSide, setViewedSide] = useState(null);
 
   useEffect(() => {
     const url = new URL(window.location);
@@ -91,6 +93,7 @@ function App() {
       blendSides={blendSides}
       swapStyle={initialSwapStyle}
       flipStyle={initialFlipStyle}
+      onViewedSide={bare ? null : setViewedSide}
     />
   );
 
@@ -109,6 +112,12 @@ function App() {
   return (
     <div className="app">
       <div className="cube-layer">{cube}</div>
+      <div className="header">
+        <div className="type-name">
+          {stack[0] + stack[1]} <span className="type-code">({selectedType})</span>
+        </div>
+        <div className="face-name">{viewedSide}</div>
+      </div>
       <div className="overlay">
         <h1>Cognitive Cube</h1>
         <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />

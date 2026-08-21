@@ -32,7 +32,11 @@ n = 7 (override via `?n=`).
 Every quadrant on the side faces labels its function with the selected
 type's rank as a subscript: the stack 1–4, and the attitude-flipped shadow
 functions 5–8 — which sit at the antipodal corners. Type badges fade in on
-a hovered quadrant; only the selected type's badge stays visible.
+a hovered quadrant. The header names the selected type by its
+function shorthand — `NeTi (ENTP)` — and, beneath it, which side of the
+cube currently fronts the camera: the Primary face (ranks 1–4), the
+Shadow face (5–8), or the Dominant's/Auxiliary's Complement faces
+between them.
 
 Selecting a type colors every corner by rank —
 <span>1&nbsp;dominant&nbsp;red, 2&nbsp;auxiliary&nbsp;orange,

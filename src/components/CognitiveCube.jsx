@@ -154,6 +154,8 @@ const _rowA = [0, 0, 0, 0];
 const _rowB = [0, 0, 0, 0];
 const _halfPos = new THREE.Vector3();
 const _halfOff = new THREE.Vector3();
+const _viewV = new THREE.Vector3();
+const _viewQ = new THREE.Quaternion();
 
 // plan: candidate selection rule. 'motion' scores each dance (and, near
 // 180°, each rotation direction) by the world motion of the composite it
@@ -595,7 +597,7 @@ function Pole({
               groupRef={localGroupRef}
               position={l.badgePos}
               normal={l.normal}
-              visible={l.type === selectedType || l.type === hoveredType}
+              visible={l.type === hoveredType}
             >
               <Text
                 raycast={() => null}
@@ -618,7 +620,7 @@ function Pole({
 
 function CubeScene({
   selectedType, setSelectedType, initialYaw, spin, swapStyle, flipStyle,
-  exponent, lineOpacity, shadowDim, shadowSat, blendSides,
+  exponent, lineOpacity, shadowDim, shadowSat, blendSides, onViewedSide,
 }) {
   const groupRef = useRef();
   const [autoRotate, setAutoRotate] = useState(spin);
@@ -1032,6 +1034,41 @@ function CubeScene({
     }
   };
 
+  // Which side face fronts the camera, tracked with hysteresis so the
+  // readout doesn't flicker on corner-on views.
+  const viewSideRef = useRef(null);
+  const viewLabelRef = useRef(null);
+  const trackViewedSide = (g) => {
+    _viewV.copy(camera.position).normalize()
+      .applyQuaternion(_viewQ.copy(g.quaternion).invert());
+    const L = latticeRef.current;
+    // semantic direction: geometric mapped through the lattice, as in
+    // hitSideFace
+    const sx = L.lx * _viewV.x;
+    const sz = L.lz * _viewV.z;
+    const facing = [
+      { ax: 'x', sign: 1, dot: sx }, { ax: 'x', sign: -1, dot: -sx },
+      { ax: 'z', sign: 1, dot: sz }, { ax: 'z', sign: -1, dot: -sz },
+    ];
+    const best = facing.reduce((a, b) => (b.dot > a.dot ? b : a));
+    const cur = viewSideRef.current;
+    const curDot = cur ? (cur.ax === 'x' ? sx : sz) * cur.sign : -Infinity;
+    if (!cur || best.dot > curDot + 0.05) viewSideRef.current = { ax: best.ax, sign: best.sign };
+    const side = viewSideRef.current;
+    const face = FACES.find(f => f.normal[side.ax === 'x' ? 0 : 2] === side.sign);
+    const ranks = Object.values(face.corners).map(fn => functionRank(selectedType, fn));
+    const has1 = ranks.includes(1);
+    const has2 = ranks.includes(2);
+    const label = has1 && has2 ? 'Primary'
+      : has1 ? "Dominant's Complement"
+        : has2 ? "Auxiliary's Complement"
+          : 'Shadow';
+    if (label !== viewLabelRef.current) {
+      viewLabelRef.current = label;
+      onViewedSide(label);
+    }
+  };
+
   const spinQ = useMemo(() => new THREE.Quaternion(), []);
   useFrame((_, delta) => {
     const g = groupRef.current;
@@ -1061,6 +1098,7 @@ function CubeScene({
       applyRests();
       if (autoRotate) g.quaternion.premultiply(spinQ.setFromAxisAngle(UP, delta * 0.2));
     }
+    if (onViewedSide) trackViewedSide(g);
   });
 
   const handleSelect = (type) => {
@@ -1116,7 +1154,7 @@ function CubeScene({
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
-  swapStyle = 'orbit', flipStyle = 'hand',
+  swapStyle = 'orbit', flipStyle = 'hand', onViewedSide = null,
 }) {
   return (
     <div style={{ width: '100%', height: '100%' }}>
@@ -1133,6 +1171,7 @@ export default function CognitiveCube({
           blendSides={blendSides}
           swapStyle={swapStyle}
           flipStyle={flipStyle}
+          onViewedSide={onViewedSide}
         />
       </Canvas>
     </div>

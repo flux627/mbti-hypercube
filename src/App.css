@@ -40,6 +40,42 @@ body {
   -webkit-user-select: none;
 }
 
+/* Selected type and the currently viewed side, centered along the top. */
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-top: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  text-align: center;
+}
+
+.type-name {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #f2f2f2;
+}
+
+.type-code {
+  font-weight: 400;
+  color: #9a9a9a;
+}
+
+.face-name {
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  color: #a8a8a8;
+  min-height: 1em;
+}
+
 .overlay h1 {
   margin: 0;
   font-size: 19px;
