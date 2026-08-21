@@ -83,7 +83,7 @@ body {
    overlay's left margin, values indented beneath them. */
 .view-info {
   /* clear the centered type-name band */
-  margin-top: 44px;
+  margin-top: 48px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
