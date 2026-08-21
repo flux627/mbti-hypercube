@@ -201,14 +201,25 @@ body {
 /* Narrow screens: title and selector share the top row, the type header
    drops below them, and the key moves to the bottom where portrait
    viewports have room. */
-/* Wide screens: the two readout groups sit beside each other, centered,
-   and the key centers along the bottom. */
+/* Wide screens: the two readout groups sit beside each other with the
+   gap between them anchored on the viewport centerline — fixed-width
+   left group right-anchored, right group left-anchored — so neither
+   moves as content changes. The key centers along the bottom. */
 @media (min-width: 701px) {
   .view-info {
-    flex-direction: row;
-    justify-content: center;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 56px;
+    align-items: start;
+  }
+
+  .view-info .view-group:first-child {
+    justify-self: end;
+    width: 180px;
+  }
+
+  .view-info .view-group:last-child {
+    justify-self: start;
   }
 
   .legend {
