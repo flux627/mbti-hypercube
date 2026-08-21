@@ -71,7 +71,7 @@ const initialSpin = params.get('spin') !== '0';
 const camParam = (params.get('cam') || '').split(',').map(Number);
 const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
   ? camParam
-  : [5, 5, 5];
+  : [5.9, 2.5, 5.9];
 
 const shorthand = type => TYPE_STACKS[type][0] + TYPE_STACKS[type][1];
 

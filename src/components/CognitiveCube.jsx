@@ -1202,7 +1202,7 @@ function ResponsiveFraming() {
 }
 
 export default function CognitiveCube({
-  selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
+  selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5.9, 2.5, 5.9],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
   swapStyle = 'orbit', flipStyle = 'hand', onViewedSide = null, wideGamut = true,
 }) {
