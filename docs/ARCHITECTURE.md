@@ -269,9 +269,10 @@ the planner's candidates; an override matching no candidate is ignored.
   (SwiftShader) fail to present float16, so the page falls back to an SDR
   canvas when the probe errors. Observed on real devices (2026-08):
   WebKit — macOS Safari, iOS Safari, and iOS Chrome (WebKit inside) —
-  shows genuine EDR brightness, capped by the display's current headroom
-  (≈2× at typical brightness; headroom scales inversely with the screen
-  brightness setting). macOS Chrome on the same machine reported the
+  shows genuine EDR brightness, capped by the display's current headroom,
+  which scales inversely with the screen brightness setting: ≈2× at
+  higher brightness, and ≥4× (the ramp brightened continuously through
+  its then-4× top) at ~50% brightness on a MacBook Pro XDR panel. macOS Chrome on the same machine reported the
   display as SDR, offered no headroom, and clamps per-channel, which
   distorts hue (orange ×2 → yellow) rather than just flattening.
   Adopting HDR in the app proper would mean a WebGPU port: three's

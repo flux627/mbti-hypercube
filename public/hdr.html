@@ -47,17 +47,17 @@
     <div>white</div><div>rank 1</div><div>rank 2</div><div>rank 3</div><div>rank 4</div>
   </div>
   <div class="rowlabels">
-    <div>1× (SDR max)</div><div>2×</div><div>4×</div><div>pulse 1–4×</div><div>ramp 1×→4×</div>
+    <div>1× (SDR max)</div><div>2×</div><div>4×</div><div>pulse 1–4×</div><div>ramp 1×→8×</div>
   </div>
   <canvas id="c"></canvas>
 </div>
 <p>
   The bottom ramp measures your headroom: white brightens continuously
-  from 1× (left) to 4× (right), with dark ticks at 2× and 3×. The point
-  where it stops getting brighter is the display's current EDR headroom.
-  It moves with screen brightness — lower the brightness and the flat
-  part should shrink; at max brightness there is usually no headroom at
-  all.
+  from 1× (left) to 8× (right), with dark ticks at 2×, 4×, and 6×. The
+  point where it stops getting brighter is the display's current EDR
+  headroom. It moves with screen brightness — lower the brightness and
+  the flat part should shrink; at max brightness there is usually no
+  headroom at all.
 </p>
 <p id="cslink"></p>
 <p><a href="/">← back to the cube</a></p>
@@ -138,10 +138,11 @@ try {
       let fy = fract(uv.y * 5.0);
       if (fy < 0.03 || fy > 0.97) { return vec4f(0.0, 0.0, 0.0, 1.0); }
       // bottom row: a continuous white headroom ramp, 1x at the left edge
-      // to 4x at the right, with dark ticks at 2x and 3x
+      // to 8x at the right, with dark ticks at 2x, 4x, and 6x
       if (row == 4u) {
-        let m = 1.0 + 3.0 * uv.x;
-        if (abs(uv.x - 1.0 / 3.0) < 0.0015 || abs(uv.x - 2.0 / 3.0) < 0.0015) {
+        let m = 1.0 + 7.0 * uv.x;
+        if (abs(uv.x - 1.0 / 7.0) < 0.0015 || abs(uv.x - 3.0 / 7.0) < 0.0015
+          || abs(uv.x - 5.0 / 7.0) < 0.0015) {
           return vec4f(0.0, 0.0, 0.0, 1.0);
         }
         return vec4f(vec3f(m, m, m), 1.0);
