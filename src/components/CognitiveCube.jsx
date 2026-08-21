@@ -1151,10 +1151,13 @@ function CubeScene({
   );
 }
 
-// Keep the cube's horizontal framing on portrait viewports: the vertical
-// fov widens so the horizontal fov never drops below the landscape value,
-// instead of cropping the cube's sides.
+// Keep the cube framed on portrait viewports: the vertical fov widens as
+// the aspect narrows so the cube's sides aren't cropped. The exponent
+// under-compensates the aspect — 1 would preserve the landscape
+// horizontal framing exactly; below 1 zooms portrait in a little while
+// staying continuous at square aspect.
 const BASE_FOV = 50;
+const PORTRAIT_ZOOM = 0.8;
 function ResponsiveFraming() {
   const { camera, size } = useThree();
   useEffect(() => {
@@ -1162,7 +1165,9 @@ function ResponsiveFraming() {
     camera.fov = aspect >= 1
       ? BASE_FOV
       : THREE.MathUtils.radToDeg(
-        2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect),
+        2 * Math.atan(
+          Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect ** PORTRAIT_ZOOM,
+        ),
       );
     camera.updateProjectionMatrix();
   }, [camera, size]);
