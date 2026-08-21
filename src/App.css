@@ -112,6 +112,7 @@ body {
   letter-spacing: 0.05em;
   color: #d6d6d6;
   min-height: 1em;
+  white-space: nowrap;
 }
 
 /* Whole line is the tap target; only the type name underlines on hover. */
@@ -215,7 +216,7 @@ body {
 
   .view-info .view-group:first-child {
     justify-self: end;
-    width: 180px;
+    width: 210px;
   }
 
   .view-info .view-group:last-child {
