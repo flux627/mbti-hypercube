@@ -1,12 +1,15 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Line } from '@react-three/drei';
+import { OrbitControls, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { WebGPURenderer, MeshBasicNodeMaterial } from 'three/webgpu';
 import {
   uniform, positionLocal, normalView, vec3, vec4, mix, clamp, dot, normalize,
   sRGBTransferEOTF,
 } from 'three/tsl';
+import {
+  fnRankLabelTexture, typeBadgeTexture, labelFontPromise, isLabelFontReady,
+} from './labelTextures.js';
 import { superellipsoidGeometry } from './superellipsoid.js';
 import {
   CORNERS, FACES, POLES, functionRank, poleShading, typeAtCorner, homeOrientation,
@@ -232,11 +235,10 @@ function residualAxisClass(axis, angle, camera) {
   return comps.length ? comps[0][0] : 'diagonal';
 }
 
-// Interim state of the WebGPU port: troika Text and drei's Line patch GLSL
-// shaders and cannot run on the node material system, so they are skipped
-// under the WebGPU renderer until their node-based replacements land
-// (labels via canvas textures, equator lines via a node line material).
-const PORT_PENDING = { labels: true, lines: true };
+// Interim state of the WebGPU port: drei's Line patches GLSL shaders and
+// cannot run on the node material system, so it is skipped until the node
+// line material replacement lands.
+const PORT_PENDING = { lines: true };
 
 // UI swap-style values → baked lane names
 const SWAP_LANES = {
@@ -271,9 +273,8 @@ function SurfaceLabel({ groupRef, position, normal, visible = true, children }) 
     _toCam.copy(camera.position).sub(_pos).normalize();
     o.visible = fadeRef.current > 0.01 && _n.dot(_toCam) > 0.05;
     if (!o.visible) return;
-    for (const text of o.children) {
-      text.fillOpacity = fadeRef.current;
-      text.outlineOpacity = fadeRef.current;
+    for (const child of o.children) {
+      if (child.material) child.material.opacity = fadeRef.current;
     }
     const d = UP.dot(_n);
     if (Math.abs(d) > 0.995) return;
@@ -290,59 +291,49 @@ function SurfaceLabel({ groupRef, position, normal, visible = true, children }) 
   );
 }
 
-// A function abbreviation with its rank as a trailing subscript, positioned
-// from the glyphs' measured widths (a fixed offset reads differently after
-// "Si" than after "Ne") and centered as a composite.
-const SUB_GAP = 0.025;
-const FnRankLabel = React.memo(function FnRankLabel({ fn, rank }) {
-  const mainRef = useRef();
-  const subRef = useRef();
-  const widths = useRef({ main: 0, sub: 0 });
+// Redraw-once-on-arrival hook for the label font: textures built before
+// Roboto loads use the sans-serif fallback and regenerate when it lands,
+// mirroring troika's async font pop-in.
+function useLabelFont() {
+  const [ready, setReady] = useState(isLabelFontReady());
+  useEffect(() => {
+    let mounted = true;
+    labelFontPromise.then(() => { if (mounted) setReady(true); });
+    return () => { mounted = false; };
+  }, []);
+  return ready;
+}
 
-  const layout = () => {
-    const { main, sub } = widths.current;
-    if (!main || !sub || !mainRef.current || !subRef.current) return;
-    const mainX = -(SUB_GAP + sub) / 2;
-    mainRef.current.position.x = mainX;
-    subRef.current.position.x = mainX + main / 2 + SUB_GAP;
-  };
-  const measure = key => t => {
-    const b = t.textRenderInfo.blockBounds;
-    widths.current[key] = b[2] - b[0];
-    layout();
-  };
-
+// A prebuilt label texture on an alpha quad. Opacity starts at 0 — the
+// enclosing SurfaceLabel drives the fade every frame.
+function LabelQuad({ spec }) {
+  const material = useMemo(() => {
+    const m = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
+    m.map = spec.texture;
+    m.opacity = 0;
+    return m;
+  }, [spec]);
+  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => spec.texture.dispose(), [spec]);
   return (
-    <>
-      <Text
-        ref={mainRef}
-        onSync={measure('main')}
-        raycast={() => null}
-        fontSize={0.36}
-        color="#cccccc"
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.02}
-        outlineColor="black"
-      >
-        {fn}
-      </Text>
-      <Text
-        ref={subRef}
-        onSync={measure('sub')}
-        raycast={() => null}
-        position={[0.16, -0.11, 0]}
-        fontSize={0.2}
-        color="#cccccc"
-        anchorX="left"
-        anchorY="middle"
-        outlineWidth={0.015}
-        outlineColor="black"
-      >
-        {String(rank)}
-      </Text>
-    </>
+    <mesh raycast={() => null} material={material}>
+      <planeGeometry args={[spec.worldW, spec.worldH]} />
+    </mesh>
   );
+}
+
+// A function abbreviation with its rank as a trailing subscript — one
+// canvas-texture quad, redrawn only when the rank (or the font) changes.
+const FnRankLabel = React.memo(function FnRankLabel({ fn, rank }) {
+  const fontReady = useLabelFont();
+  const spec = useMemo(() => fnRankLabelTexture(fn, rank), [fn, rank, fontReady]);
+  return <LabelQuad spec={spec} />;
+});
+
+const TypeBadge = React.memo(function TypeBadge({ type, selected }) {
+  const fontReady = useLabelFont();
+  const spec = useMemo(() => typeBadgeTexture(type, selected), [type, selected, fontReady]);
+  return <LabelQuad spec={spec} />;
 });
 
 // Position within a side face at `fraction` from center toward `corner` —
@@ -587,7 +578,7 @@ function Pole({
           side={THREE.DoubleSide}
         />
       )}
-      {!PORT_PENDING.labels && labels.map(l => (
+      {labels.map(l => (
         <group key={l.key}>
           <SurfaceLabel groupRef={localGroupRef} position={l.fnPos} normal={l.normal}>
             <FnRankLabel fn={l.fn} rank={functionRank(selectedType, l.fn)} />
@@ -599,17 +590,7 @@ function Pole({
               normal={l.normal}
               visible={l.type === hoveredType}
             >
-              <Text
-                raycast={() => null}
-                fontSize={0.15}
-                color={l.type === selectedType ? 'white' : '#bbbbbb'}
-                anchorX="center"
-                anchorY="middle"
-                outlineWidth={0.01}
-                outlineColor="black"
-              >
-                {l.type}
-              </Text>
+              <TypeBadge type={l.type} selected={l.type === selectedType} />
             </SurfaceLabel>
           )}
         </group>
