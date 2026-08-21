@@ -50,7 +50,7 @@ function measureBlock(ctx, text, sizePx) {
 // drew its SDF outline at display resolution and reached full black, while
 // a texture rim loses its core to mip/bilinear filtering — measured against
 // the troika reference on scanlines through glyph stems.
-const OUTLINE_GAIN = 1.6;
+const OUTLINE_GAIN = 1.25;
 function strokeAndFill(ctx, text, x, y, outlinePx, fill) {
   if (outlinePx > 0) {
     ctx.lineJoin = 'round';
@@ -64,7 +64,10 @@ function strokeAndFill(ctx, text, x, y, outlinePx, fill) {
 
 function toTexture(canvas) {
   const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
+  // The scene renders in the encoded domain (the renderer's output pass is
+  // the identity — see the Canvas setup), so the canvas pixels must pass
+  // through the sampler untouched rather than being decoded to linear.
+  texture.colorSpace = THREE.NoColorSpace;
   texture.anisotropy = 8;
   return texture;
 }

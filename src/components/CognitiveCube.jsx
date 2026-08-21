@@ -1,11 +1,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Line } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { WebGPURenderer, MeshBasicNodeMaterial } from 'three/webgpu';
+import { WebGPURenderer, MeshBasicNodeMaterial, LineBasicNodeMaterial } from 'three/webgpu';
 import {
   uniform, positionLocal, normalView, vec3, vec4, mix, clamp, dot, normalize,
-  sRGBTransferEOTF,
 } from 'three/tsl';
 import {
   fnRankLabelTexture, typeBadgeTexture, labelFontPromise, isLabelFontReady,
@@ -61,11 +60,15 @@ const easeInOut = new URLSearchParams(window.location.search).get('ease') === 'c
 // A touch of view-space lighting keeps the rounded form legible.
 //
 // TSL port of the former GLSL ShaderMaterial, same uniforms and math. The
-// GLSL shader wrote its values raw to the drawing buffer; the node pipeline
-// instead runs every fragment through an output pass (tone mapping + the
-// sRGB OETF), so the final color is pre-inverted with the EOTF — with tone
-// mapping flat, the output pass restores exactly the raw values, and the
-// rendered bytes match the WebGL build.
+// GLSL shader wrote its values raw to the drawing buffer; the whole node
+// pipeline is therefore run in that same "encoded domain": the Canvas is
+// flat + linear, which makes the renderer's output pass the identity, so
+// raw fragment values land on the canvas unchanged — and, just as
+// important, alpha blending and MSAA resolve happen on encoded values,
+// exactly as they did in the WebGL drawing buffer. (The first port
+// attempt pre-inverted the sRGB OETF per material instead; single opaque
+// surfaces matched, but everything translucent — the equator lines —
+// blended in linear space and read visibly brighter.)
 function makePoleMaterial(center) {
   const uniforms = {
     nearTop: uniform(new THREE.Color()),
@@ -96,7 +99,7 @@ function makePoleMaterial(center) {
   const color = base.mul(diff.mul(0.28).add(0.72)).add(spec.mul(0.12));
 
   const material = new MeshBasicNodeMaterial({ side: THREE.DoubleSide });
-  material.fragmentNode = vec4(sRGBTransferEOTF(color), 1);
+  material.fragmentNode = vec4(color, 1);
   material.uniforms = uniforms;
   return material;
 }
@@ -235,10 +238,14 @@ function residualAxisClass(axis, angle, camera) {
   return comps.length ? comps[0][0] : 'diagonal';
 }
 
-// Interim state of the WebGPU port: drei's Line patches GLSL shaders and
-// cannot run on the node material system, so it is skipped until the node
-// line material replacement lands.
-const PORT_PENDING = { lines: true };
+// ?lines= parity map: the old drei Line2 (screen-space quads) and native
+// 1px lines rasterize with different effective coverage — Line2 rendered
+// ~28% under its nominal alpha at 0.1 and ~10% under at 0.7, native lines
+// ~80% and ~35% over (MSAA spreads them across two device rows). The
+// power fit maps the native line's measured intensity curve onto the
+// reference build's, calibrated by integrated scanline bumps at 0.1 and
+// 0.7 on identical frames.
+const lineAlphaFor = v => Math.min(1, 0.6 * v ** 1.25);
 
 // UI swap-style values → baked lane names
 const SWAP_LANES = {
@@ -556,6 +563,26 @@ function Pole({
     });
   }, [exponent]);
 
+  // Plain THREE.Line (1px) with a node line material — the drei Line
+  // (Line2) it replaces patches GLSL and cannot run on the node system.
+  const equatorLine = useMemo(() => {
+    if (lineOpacity <= 0) return null;
+    const geometry = new THREE.BufferGeometry().setFromPoints(equator);
+    const lineMaterial = new LineBasicNodeMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: lineAlphaFor(lineOpacity),
+      side: THREE.DoubleSide,
+    });
+    return new THREE.Line(geometry, lineMaterial);
+  }, [equator, lineOpacity]);
+  useEffect(() => () => {
+    if (equatorLine) {
+      equatorLine.geometry.dispose();
+      equatorLine.material.dispose();
+    }
+  }, [equatorLine]);
+
   return (
     <group
       position={center}
@@ -568,16 +595,7 @@ function Pole({
         onPointerMove={handlePointerMove}
         onPointerOut={() => { onHover(null); document.body.style.cursor = 'auto'; }}
       />
-      {!PORT_PENDING.lines && lineOpacity > 0 && (
-        <Line
-          points={equator}
-          color="#ffffff"
-          transparent
-          opacity={lineOpacity}
-          lineWidth={1}
-          side={THREE.DoubleSide}
-        />
-      )}
+      {equatorLine && <primitive object={equatorLine} />}
       {labels.map(l => (
         <group key={l.key}>
           <SurfaceLabel groupRef={localGroupRef} position={l.fnPos} normal={l.normal}>
@@ -1198,10 +1216,16 @@ export default function CognitiveCube({
       <Canvas
         camera={{ position: cameraPosition, fov: BASE_FOV }}
         style={{ background: '#0a0a0a' }}
-        // flat = NoToneMapping: the output pass must apply only the sRGB
-        // OETF, which the pole material pre-inverts for byte parity with
-        // the former raw-writing GLSL pipeline
+        // flat (NoToneMapping) + linear (outputColorSpace LinearSRGB)
+        // make the renderer's output pass the identity: the scene renders
+        // in the encoded domain, byte-compatible with the former
+        // raw-writing GLSL pipeline — including alpha blending and MSAA
+        // resolve, which the WebGL drawing buffer also did on encoded
+        // values. (In r3f v9 `linear` only sets outputColorSpace; color
+        // management stays enabled, so THREE.Color hex→linear conversion
+        // — which the pole gradient values bake in — is unchanged.)
         flat
+        linear
         gl={(props) => {
           // r3f v9 async renderer init; three falls back to its WebGL2
           // backend automatically where WebGPU is unavailable

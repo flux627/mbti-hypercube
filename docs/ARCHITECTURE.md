@@ -47,35 +47,75 @@ off the canonical grid fails a test.
 
 ## Rendering
 
+- The Canvas runs three's **WebGPURenderer** (r3f v9 async gl init; three
+  falls back to its WebGL2 backend where WebGPU is unavailable — the node
+  material system compiles to WGSL or GLSL accordingly). Headless chromium
+  presents the WebGPU backend, so all sweeps run unchanged.
+- **Encoded-domain pipeline**: the old GLSL materials wrote their values
+  raw into the sRGB drawing buffer. The node pipeline reproduces that
+  exactly by making the renderer's output pass the identity (Canvas `flat`
+  + `linear`): fragment values land on the canvas unchanged, and — just as
+  important — alpha blending and MSAA resolve happen on encoded values, as
+  the WebGL drawing buffer did. (Pre-inverting the OETF per material was
+  tried first; opaque surfaces matched but everything translucent blended
+  in linear space and read visibly brighter.) Color management stays
+  enabled, so `THREE.Color(hex)` still bakes hex→linear into the pole
+  gradient values — the same numbers the GLSL shader received.
 - Poles are superellipsoids |x/a|ⁿ+|y/b|ⁿ+|z/c|ⁿ=1 (n = 7 locked, `?n=`
   override), built by radially projecting a subdivided box (good corner
   density) with analytic gradient normals. One shared geometry, one
-  ShaderMaterial per pole.
-- Shader: each pole is the vertical gradient between its own corner
-  colors; along the home-face axis it blends toward its partner's gradient.
-  `blendSides=0` (locked default) snaps each pole to its own gradient —
-  hard color boundaries at every groove. Baked view-space lighting
-  (diffuse + specular) keeps the form legible; no scene lights exist.
-  Known limitation: the `?blend=1` override's blend axis does not track a
-  rearranged lattice.
+  node material (`makePoleMaterial`) per pole.
+- Pole material: a TSL `fragmentNode` on MeshBasicNodeMaterial — each pole
+  is the vertical gradient between its own corner colors; along the
+  home-face axis it blends toward its partner's gradient. `blendSides=0`
+  (locked default) snaps each pole to its own gradient — hard color
+  boundaries at every groove. Baked view-space lighting (diffuse +
+  specular) keeps the form legible; no scene lights exist. The crossfade
+  effects drive TSL uniform nodes through the same `material.uniforms`
+  shape as before. Known limitation: the `?blend=1` override's blend axis
+  does not track a rearranged lattice.
 - Equator lines: each pole carries its y=0 superellipse cross-section as a
-  white loop, opacity 0.1 locked (`?lines=`).
+  white loop, opacity 0.1 locked (`?lines=`) — a plain 1px `THREE.Line`
+  with `LineBasicNodeMaterial`. Native lines and the old drei Line2 quads
+  rasterize with different effective coverage, so `?lines=` values map
+  through a measured power fit (`lineAlphaFor`) calibrated so 0.1 and 0.7
+  render at the WebGL build's intensity.
 - Colors crossfade on the shared transition clock (uniform lerp in Pole),
   so re-ranking melts rather than snaps.
+- Wide gamut: the canvas is reinterpreted as Display P3 (`?p3=0` reverts)
+  — on the WebGPU backend by re-issuing the canvas `configure()` call with
+  `colorSpace: 'display-p3'`, on the WebGL2 fallback via
+  `drawingBufferColorSpace` as before.
 
 ## Labels
 
 All labels are anchored in their pole's own geometry frame, so they ride
 every dance and slerp automatically. `SurfaceLabel` re-bases each label to
 a world-upright orthonormal basis every frame (readable even mid-flip) and
-carries a fade for visibility changes. Function labels are `FnRankLabel`:
-abbreviation + the selected type's rank as a subscript, positioned from
-troika's measured glyph widths (onSync blockBounds) so Si₄ and Ne₁ read
-identically. Type badges are horizontally centered on the pole (placement
-invariant under any rearrangement), 72% toward the octant end, and shown
-only for the selected type or the hovered quadrant (hover = pointermove on
-the pole mesh with stopPropagation — without it the ray hits the poles
-behind and overwrites the hover).
+carries a fade for visibility changes (driving `material.opacity`).
+
+Labels are offscreen-2D-canvas textures on alpha quads
+(`src/components/labelTextures.js`) — troika Text patches GLSL and cannot
+run on the node material system. Textures draw at 256px per world unit
+(~3x the on-screen CSS density) in the same Roboto face troika fetched
+(FontFace API, same gstatic URL; sans-serif fallback until it arrives) and
+regenerate only when the drawn content changes (rank/type/selection/font
+arrival), never per frame. Parity details, iterated pixel-for-pixel
+against the WebGL build: anchorY-middle sits on the OS/2 typo
+ascender/descender block (0.75/0.25em — canvas fontBoundingBox reports
+hhea metrics, 3px lower); the stroke outline draws with a 1.25 gain over
+troika's nominal widths (a texture rim loses its core to mip/bilinear
+filtering where troika's SDF rendered at display resolution); textures are
+NoColorSpace so the encoded-domain pipeline passes their bytes through.
+
+Function labels are `FnRankLabel`: abbreviation + the selected type's rank
+as a subscript, the composite (main + gap + subscript) measured and
+centered as a whole so Si₄ and Ne₁ read identically. Type badges are
+horizontally centered on the pole (placement invariant under any
+rearrangement), 72% toward the octant end, and shown only for the selected
+type or the hovered quadrant (hover = pointermove on the pole mesh with
+stopPropagation — without it the ray hits the poles behind and overwrites
+the hover).
 
 ## Transitions: the four-move system
 
