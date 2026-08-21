@@ -189,11 +189,13 @@ function App() {
           <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />
         </div>
         <div className="view-info">
-          <div className="view-label">Viewing functions:</div>
-          <div className="view-indent face-name">{viewedSide}</div>
+          <div className="view-group">
+            <div className="view-label">Viewing functions:</div>
+            <div className="view-indent face-name">{viewedSide}</div>
+          </div>
           {viewedSide && (
-            <>
-              <div className="view-label related-label">Related types in this view:</div>
+            <div className="view-group">
+              <div className="view-label">Related types in this view:</div>
               {relatedForView(selectedType, viewedSide).map(([t, desc]) => (
                 <a
                   key={t}
@@ -205,7 +207,7 @@ function App() {
                   <span className="related-desc"> - {desc}</span>
                 </a>
               ))}
-            </>
+            </div>
           )}
         </div>
         <div className="legend">

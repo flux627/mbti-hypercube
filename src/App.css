@@ -87,6 +87,13 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  gap: 10px;
+}
+
+.view-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 3px;
 }
 
@@ -105,10 +112,6 @@ body {
   letter-spacing: 0.05em;
   color: #d6d6d6;
   min-height: 1em;
-}
-
-.related-label {
-  margin-top: 10px;
 }
 
 /* Whole line is the tap target; only the type name underlines on hover. */
@@ -198,6 +201,21 @@ body {
 /* Narrow screens: title and selector share the top row, the type header
    drops below them, and the key moves to the bottom where portrait
    viewports have room. */
+/* Wide screens: the two readout groups sit beside each other, centered,
+   and the key centers along the bottom. */
+@media (min-width: 701px) {
+  .view-info {
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 56px;
+  }
+
+  .legend {
+    justify-content: center;
+  }
+}
+
 /* Narrow screens: same arrangement, tighter sizes. */
 @media (max-width: 700px) {
   .overlay {
