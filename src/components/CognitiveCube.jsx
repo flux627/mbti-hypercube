@@ -1174,17 +1174,28 @@ function WideGamut() {
 // staying continuous at square aspect.
 const BASE_FOV = 50;
 const PORTRAIT_ZOOM = 0.6;
+// Fraction of the viewport height the cube sits below center on portrait
+// screens, clearing room for the header's readouts.
+const PORTRAIT_DROP = 0.07;
 function ResponsiveFraming() {
   const { camera, size } = useThree();
   useEffect(() => {
     const aspect = size.width / size.height;
-    camera.fov = aspect >= 1
-      ? BASE_FOV
-      : THREE.MathUtils.radToDeg(
+    if (aspect >= 1) {
+      camera.fov = BASE_FOV;
+      camera.clearViewOffset();
+    } else {
+      camera.fov = THREE.MathUtils.radToDeg(
         2 * Math.atan(
           Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect ** PORTRAIT_ZOOM,
         ),
       );
+      camera.setViewOffset(
+        size.width, size.height,
+        0, -Math.round(size.height * PORTRAIT_DROP),
+        size.width, size.height,
+      );
+    }
     camera.updateProjectionMatrix();
   }, [camera, size]);
   return null;

@@ -76,11 +76,52 @@ body {
   color: #9a9a9a;
 }
 
+/* Viewing-side readout: left-aligned block, labels flush with the
+   overlay's left margin, values indented beneath them. */
+.view-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.view-label {
+  font-size: 12px;
+  color: #7a7a7a;
+  letter-spacing: 0.02em;
+}
+
+.view-indent {
+  padding-left: 16px;
+}
+
 .face-name {
-  font-size: 13px;
+  font-size: 13.5px;
   letter-spacing: 0.05em;
-  color: #a8a8a8;
+  color: #d6d6d6;
   min-height: 1em;
+}
+
+.related-label {
+  margin-top: 10px;
+}
+
+.related-row {
+  font-size: 12.5px;
+}
+
+.related-row a {
+  pointer-events: auto;
+  color: #d6d6d6;
+  text-decoration: none;
+}
+
+.related-row a:hover {
+  text-decoration: underline;
+}
+
+.related-desc {
+  color: #8d8d8d;
 }
 
 .overlay h1 {
@@ -145,8 +186,12 @@ body {
   .overlay {
     inset: 0;
     padding: 14px 16px;
-    justify-content: space-between;
     align-items: stretch;
+  }
+
+  /* clear the centered type-name band before the left-aligned readout */
+  .view-info {
+    margin-top: 44px;
   }
 
   .top-row {
@@ -174,11 +219,39 @@ body {
   }
 
   .face-name {
+    font-size: 12.5px;
+  }
+
+  .view-label {
+    font-size: 11px;
+  }
+
+  .related-row {
     font-size: 12px;
   }
 
+  /* two columns, ranks 1-4 beside 5-8, pinned to the bottom so the key
+     stays short and the cube can sit lower */
   .legend {
-    font-size: 12px;
-    gap: 4px;
+    margin-top: auto;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(4, auto);
+    column-gap: 14px;
+    row-gap: 4px;
+    font-size: 11px;
+  }
+
+  .legend-row {
+    gap: 5px;
+  }
+
+  .swatch {
+    width: 9px;
+    height: 9px;
+  }
+
+  .fcode {
+    font-size: 10px;
   }
 }

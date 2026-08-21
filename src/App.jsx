@@ -73,6 +73,39 @@ const initialCamera = camParam.length === 3 && camParam.every(Number.isFinite)
   ? camParam
   : [5, 5, 5];
 
+const shorthand = type => TYPE_STACKS[type][0] + TYPE_STACKS[type][1];
+
+// The related types listed for each viewed side, derived from the selected
+// type's dominant/auxiliary pair. Each finder is unique: every function is
+// dominant for exactly two types and auxiliary for exactly two.
+function relatedForView(type, side) {
+  const [dom, aux] = TYPE_STACKS[type];
+  const find = pred => Object.keys(TYPE_STACKS).find(t => t !== type && pred(TYPE_STACKS[t]));
+  switch (side) {
+    case 'Preferred':
+      return [
+        [find(s => s[0] === aux && s[1] === dom), 'Shares both axes with flipped dominance'],
+      ];
+    case "Dominant's Complement":
+      return [
+        [find(s => s[0] === dom), 'Shares dominant axis'],
+        [find(s => s[1] === dom && s[0] !== aux), "Auxiliary axis same as parent's dominant"],
+      ];
+    case "Auxiliary's Complement":
+      return [
+        [find(s => s[1] === aux), 'Shares auxiliary axis'],
+        [find(s => s[0] === aux && s[1] !== dom), "Dominant axis same as parent's auxiliary"],
+      ];
+    case 'Shadow':
+      return [
+        [find(s => s[0] === flipAttitude(dom) && s[1] === flipAttitude(aux)),
+          'Shares all functions with opposite attitude'],
+      ];
+    default:
+      return [];
+  }
+}
+
 function App() {
   const [selectedType, setSelectedType] = useState(initialType);
   // which side of the cube fronts the camera, relative to the selected type
@@ -130,12 +163,31 @@ function App() {
         <div className="type-name">
           {stack[0] + stack[1]} <span className="type-code">({selectedType})</span>
         </div>
-        <div className="face-name">{viewedSide}</div>
       </div>
       <div className="overlay">
         <div className="top-row">
           <h1>Cognitive Cube</h1>
           <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />
+        </div>
+        <div className="view-info">
+          <div className="view-label">Viewing functions:</div>
+          <div className="view-indent face-name">{viewedSide}</div>
+          {viewedSide && (
+            <>
+              <div className="view-label related-label">Related types in this view:</div>
+              {relatedForView(selectedType, viewedSide).map(([t, desc]) => (
+                <div key={t} className="view-indent related-row">
+                  <a
+                    href={`?type=${t}`}
+                    onClick={(e) => { e.preventDefault(); setSelectedType(t); }}
+                  >
+                    {shorthand(t)} ({t})
+                  </a>
+                  <span className="related-desc"> - {desc}</span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
         <div className="legend">
           {keyRows.map(({ rank, fn, color }) => (
