@@ -298,26 +298,38 @@ the planner's candidates; an override matching no candidate is ignored.
   a fade is possible if wanted.
 - `?dur=` and the lane selectors are review tooling; decide what stays
   user-facing when the design settles.
-- **HDR**: the app renders wide-gamut (the canvas drawing buffer is
-  reinterpreted as Display P3, `?p3=0` reverts), which covers chroma but
-  not brightness headroom. True HDR needs a WebGPU canvas with
-  `rgba16float` + extended tone mapping — unavailable to WebGL.
-  `/hdr.html` is a standalone raw-WebGPU probe of that path: rank-color
-  patches at 1×/2×/4×/pulsing against an SDR-white reference, with a
-  status line naming which link in the chain (browser, adapter, display)
-  clamps, a white 1×→4× ramp for reading off the actual headroom, and
-  `?cs=srgb` to A/B the canvas color space. Software adapters
-  (SwiftShader) fail to present float16, so the page falls back to an SDR
-  canvas when the probe errors. Observed on real devices (2026-08):
+- **HDR**: the WebGPU port exists to unlock EDR brightness on WebKit.
+  `/hdr.html` is the standalone raw-WebGPU probe that established the
+  path (`rgba16float` + `display-p3` + extended tone mapping): rank-color
+  patches at 1×/2×/4×/pulsing against an SDR-white reference, a status
+  line naming which link in the chain (browser, adapter, display) clamps,
+  a white 1×→8× headroom ramp, and `?cs=srgb` to A/B the canvas color
+  space. Software adapters (SwiftShader) fail to present float16, so both
+  the probe page and the app fall back to an SDR canvas when a
+  configure-and-create test errors. Observed on real devices (2026-08):
   WebKit — macOS Safari, iOS Safari, and iOS Chrome (WebKit inside) —
   shows genuine EDR brightness, capped by the display's current headroom,
   which scales inversely with the screen brightness setting: ≈2× at
-  higher brightness, and ≥4× (the ramp brightened continuously through
-  its then-4× top) at ~50% brightness on a MacBook Pro XDR panel. macOS Chrome on the same machine reported the
-  display as SDR, offered no headroom, and clamps per-channel, which
-  distorts hue (orange ×2 → yellow) rather than just flattening.
-  Adopting HDR in the app proper would mean a WebGPU port: three's
-  WebGPURenderer with the pole shader rewritten as TSL nodes and a
-  replacement for troika text — a large lift; any real design should cap
-  boost near 2× and gate on `dynamic-range: high` so clamping browsers
-  never see >1.0 values.
+  higher brightness, ≥4× at ~50% brightness on a MacBook Pro XDR panel.
+  macOS Chrome on the same machine reports the display as SDR, offers no
+  headroom, and clamps per-channel, which distorts hue (orange ×2 →
+  yellow) rather than just flattening. `spike/` holds the minimal
+  three-r185 `WebGPURenderer` version of the same test (a 1× and a 2×
+  white TSL plane; `outputType: HalfFloatType` + a display-p3 context
+  reconfigure) — eye-verified in Safari (2026-08): the 2× plane genuinely
+  glows brighter than SDR white, so three's node pipeline reaches EDR
+  exactly as raw WebGPU does.
+  In the app, `?hdr=` boosts the four full-strength stack-rank corner
+  colors (never shadows or labels) ×2 as a uniform scale in the pole
+  material — default on, `0` disables, a number >1 overrides the scale
+  for review, capped at 4. The boost activates only when the raw-WebGPU
+  probe passes — configure + texture creation succeed AND the browser
+  reads the tone mapping back as `extended`, since a browser may accept
+  the option yet silently clamp — AND the display reports
+  `(dynamic-range: high)` (tracked live, so moving the window to an SDR
+  monitor turns it off), meaning clamping browsers receive exactly the
+  SDR values; the boost weights crossfade with the colors so re-ranks
+  melt in brightness too.
+  `window.__hdr` exposes the gate state; `window.__hdrForce(n)` overrides
+  the scale for headless verification (the media query cannot be
+  emulated).

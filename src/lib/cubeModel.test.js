@@ -219,6 +219,8 @@ for (const t of types) {
   assert.deepEqual(niSe, {
     nearTop: '#ff0000', nearBottom: '#0000ff',
     farTop: shadeHex('#00aeff'), farBottom: shadeHex('#ff8a00'),
+    nearTopFn: 'Ni', nearBottomFn: 'Se',
+    farTopFn: 'Te', farBottomFn: 'Fi',
     dirFace: [-1, 0, 0],
     isNear: true,
   });
@@ -226,6 +228,8 @@ for (const t of types) {
   assert.deepEqual(siNe, {
     nearTop: '#ff8a00', nearBottom: '#00aeff',
     farTop: shadeHex('#0000ff'), farBottom: shadeHex('#ff0000'),
+    nearTopFn: 'Fe', nearBottomFn: 'Ti',
+    farTopFn: 'Si', farBottomFn: 'Ne',
     dirFace: [-1, 0, 0],
     isNear: false,
   });

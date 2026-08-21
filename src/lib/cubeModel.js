@@ -184,6 +184,12 @@ export function poleShading(pole, type, dimFactor = SHADOW_DIM, satFactor = SHAD
     nearBottom: cornerColor(type, near.bottom, dimFactor, satFactor),
     farTop: cornerColor(type, far.top, dimFactor, satFactor),
     farBottom: cornerColor(type, far.bottom, dimFactor, satFactor),
+    // the function behind each gradient endpoint — lets the renderer treat
+    // full-strength stack-rank corners differently from shadow corners
+    nearTopFn: near.top,
+    nearBottomFn: near.bottom,
+    farTopFn: far.top,
+    farBottomFn: far.bottom,
     dirFace,
     // whether this pole is the near one — lets the renderer snap the pole
     // to its own gradient when side-face blending is off

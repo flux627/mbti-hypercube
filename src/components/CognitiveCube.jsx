@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { WebGPURenderer, MeshBasicNodeMaterial, LineBasicNodeMaterial } from 'three/webgpu';
 import {
-  uniform, positionLocal, normalView, vec3, vec4, mix, clamp, dot, normalize,
+  uniform, positionLocal, normalView, float, vec3, vec4, mix, clamp, dot, normalize,
 } from 'three/tsl';
 import {
   fnRankLabelTexture, typeBadgeTexture, labelFontPromise, isLabelFontReady,
@@ -81,12 +81,21 @@ function makePoleMaterial(center) {
     halfSpan: uniform(SCALE),
     blendSides: uniform(1), // 1 = blend across side faces, 0 = hard boundaries
     ownWeight: uniform(1), // 1 if this pole is on the home-face side
+    // 1 where the gradient endpoint carries a full-strength stack-rank
+    // color, 0 for shadows — only rank corners take the HDR boost
+    nearTopRank: uniform(0),
+    nearBottomRank: uniform(0),
+    farTopRank: uniform(0),
+    farBottomRank: uniform(0),
   };
   const u = uniforms;
   const vPos = positionLocal.add(u.poleCenter);
   const ty = clamp(vPos.y.add(u.halfHeight).div(u.halfHeight.mul(2)), 0, 1);
-  const nearC = mix(u.nearBottom, u.nearTop, ty);
-  const farC = mix(u.farBottom, u.farTop, ty);
+  // uHdrScale is 1 unless the display chain supports EDR (see ?hdr=), so
+  // clamping browsers see exactly the SDR values
+  const boosted = (c, rankW) => c.mul(mix(float(1), uHdrScale, rankW));
+  const nearC = mix(boosted(u.nearBottom, u.nearBottomRank), boosted(u.nearTop, u.nearTopRank), ty);
+  const farC = mix(boosted(u.farBottom, u.farBottomRank), boosted(u.farTop, u.farTopRank), ty);
   const wBlend = clamp(dot(vPos, u.dirFace).div(u.halfSpan).add(1).mul(0.5), 0, 1);
   // hard boundaries: the pole shows its own gradient at full strength
   const w = mix(u.ownWeight, wBlend, u.blendSides);
@@ -193,6 +202,72 @@ const FORCE = {
 // explicit ?swap=/?flip= lane params beat a kind favorite's lane choice
 const SWAP_LANE_FORCED = _params.has('swap');
 const FLIP_LANE_FORCED = _params.has('flip');
+
+// ?hdr=: boost the four full-strength stack-rank corner colors toward ~2x
+// on displays with EDR headroom (WebKit shows genuine extra brightness via
+// WebGPU float16 + extended tone mapping — see /hdr.html and the HDR notes
+// in docs/ARCHITECTURE.md). Default on where the whole chain supports it;
+// 0 disables; a number above 1 overrides the scale (review). Browsers
+// where any link clamps never receive values above 1.0 — the scale stays
+// exactly 1, so their output is bit-identical to the SDR build.
+const _hdrParam = _params.get('hdr');
+const HDR_REQUESTED = _hdrParam !== '0';
+const _hdrNum = Number(_hdrParam);
+const HDR_SCALE = Number.isFinite(_hdrNum) && _hdrNum > 1 ? Math.min(_hdrNum, 4) : 2;
+// one shared uniform drives every pole material; 1 = no boost
+const uHdrScale = uniform(1);
+window.__hdr = { requested: HDR_REQUESTED, scale: HDR_SCALE, probed: false, active: false };
+
+// The float16 + extended-tone-mapping canvas fails on software adapters
+// (SwiftShader accepts configure() but cannot create the texture), so
+// probe with raw WebGPU before handing three the HalfFloatType output —
+// its pipelines all target the canvas format, so a post-hoc format
+// fallback would break every pipeline. Same pattern as public/hdr.html.
+async function probeHdrCanvas() {
+  if (!HDR_REQUESTED || !navigator.gpu) return false;
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return false;
+    const device = await adapter.requestDevice();
+    const ctx = document.createElement('canvas').getContext('webgpu');
+    device.pushErrorScope('validation');
+    ctx.configure({
+      device,
+      format: 'rgba16float',
+      colorSpace: 'display-p3',
+      toneMapping: { mode: 'extended' },
+      alphaMode: 'opaque',
+    });
+    ctx.getCurrentTexture();
+    const err = await device.popErrorScope();
+    // a browser may accept the configure call but silently ignore the
+    // tone-mapping option (then clamp >1 values per-channel, distorting
+    // hue) — require it to read back as extended, like /hdr.html does
+    const mode = ctx.getConfiguration?.().toneMapping?.mode;
+    ctx.unconfigure();
+    device.destroy();
+    return !err && mode === 'extended';
+  } catch {
+    return false;
+  }
+}
+
+// Boost only while the display actually reports EDR headroom, tracked
+// live — moving the window to another display or toggling brightness can
+// change the answer.
+function applyHdrState() {
+  const active = window.__hdr.probed && matchMedia('(dynamic-range: high)').matches;
+  uHdrScale.value = window.__hdr.forced ?? (active ? HDR_SCALE : 1);
+  window.__hdr.active = active;
+}
+// debug override for headless verification (the media query cannot be
+// emulated): __hdr.force(2) pushes the boost regardless of display state
+window.__hdrForce = (scale) => {
+  window.__hdr.forced = scale;
+  applyHdrState();
+};
+const _dynRange = typeof matchMedia !== 'undefined' ? matchMedia('(dynamic-range: high)') : null;
+if (_dynRange?.addEventListener) _dynRange.addEventListener('change', applyHdrState);
 
 // The residual rotation from one orientation to another, as axis + angle
 // (the w >= 0 representative, so angle is the short way in [0, pi]).
@@ -384,6 +459,10 @@ function Pole({
   const colorsInitRef = useRef(false);
   useEffect(() => {
     const u = material.uniforms;
+    // HDR boost applies to full-strength stack-rank corners only; the
+    // weights crossfade with the colors so a re-rank melts in brightness
+    // just as it does in hue
+    const rankW = fn => (functionRank(selectedType, fn) <= 4 ? 1 : 0);
     const to = {
       nearTop: new THREE.Color(shading.nearTop),
       nearBottom: new THREE.Color(shading.nearBottom),
@@ -391,6 +470,10 @@ function Pole({
       farBottom: new THREE.Color(shading.farBottom),
       dirFace: new THREE.Vector3(...shading.dirFace),
       ownWeight: shading.isNear ? 1 : 0,
+      nearTopRank: rankW(shading.nearTopFn),
+      nearBottomRank: rankW(shading.nearBottomFn),
+      farTopRank: rankW(shading.farTopFn),
+      farBottomRank: rankW(shading.farBottomFn),
     };
     if (!colorsInitRef.current) {
       colorsInitRef.current = true;
@@ -400,6 +483,10 @@ function Pole({
       u.farBottom.value.copy(to.farBottom);
       u.dirFace.value.copy(to.dirFace);
       u.ownWeight.value = to.ownWeight;
+      u.nearTopRank.value = to.nearTopRank;
+      u.nearBottomRank.value = to.nearBottomRank;
+      u.farTopRank.value = to.farTopRank;
+      u.farBottomRank.value = to.farBottomRank;
       return;
     }
     colorAnimRef.current = {
@@ -411,10 +498,14 @@ function Pole({
         farBottom: u.farBottom.value.clone(),
         dirFace: u.dirFace.value.clone(),
         ownWeight: u.ownWeight.value,
+        nearTopRank: u.nearTopRank.value,
+        nearBottomRank: u.nearBottomRank.value,
+        farTopRank: u.farTopRank.value,
+        farBottomRank: u.farBottomRank.value,
       },
       to,
     };
-  }, [shading, material]);
+  }, [shading, material, selectedType]);
 
   useEffect(() => {
     material.uniforms.blendSides.value = blendSides ? 1 : 0;
@@ -432,6 +523,9 @@ function Pole({
     u.farBottom.value.lerpColors(a.from.farBottom, a.to.farBottom, e);
     u.dirFace.value.lerpVectors(a.from.dirFace, a.to.dirFace, e);
     u.ownWeight.value = a.from.ownWeight + (a.to.ownWeight - a.from.ownWeight) * e;
+    for (const k of ['nearTopRank', 'nearBottomRank', 'farTopRank', 'farBottomRank']) {
+      u[k].value = a.from[k] + (a.to[k] - a.from[k]) * e;
+    }
     if (a.t >= 1) colorAnimRef.current = null;
   });
 
@@ -1226,11 +1320,22 @@ export default function CognitiveCube({
         // — which the pole gradient values bake in — is unchanged.)
         flat
         linear
-        gl={(props) => {
+        gl={async (props) => {
           // r3f v9 async renderer init; three falls back to its WebGL2
-          // backend automatically where WebGPU is unavailable
-          const renderer = new WebGPURenderer({ ...props, antialias: true });
-          return renderer.init().then(() => renderer);
+          // backend automatically where WebGPU is unavailable. Where the
+          // HDR probe passes, the canvas becomes rgba16float + extended
+          // tone mapping (HalfFloatType output); otherwise the default
+          // SDR canvas — bit-identical to the pre-HDR build.
+          const hdrOK = await probeHdrCanvas();
+          window.__hdr.probed = hdrOK;
+          const renderer = new WebGPURenderer({
+            ...props,
+            antialias: true,
+            ...(hdrOK ? { outputType: THREE.HalfFloatType } : {}),
+          });
+          await renderer.init();
+          applyHdrState();
+          return renderer;
         }}
       >
         {wideGamut && <WideGamut />}
