@@ -84,6 +84,11 @@ const VIEW_RANKS = {
   Shadow: [5, 6, 7, 8],
 };
 
+// The other end of a function's axis: the antipodal function (letter and
+// attitude both flipped — Ne↔Si, Ti↔Fe, …).
+const FLIP_LETTER = { N: 'S', S: 'N', T: 'F', F: 'T' };
+const oppositeFn = fn => FLIP_LETTER[fn[0]] + (fn[1] === 'i' ? 'e' : 'i');
+
 // The related types listed for each viewed side, derived from the selected
 // type's dominant/auxiliary pair. Each finder is unique: every function is
 // dominant for exactly two types and auxiliary for exactly two.
@@ -94,6 +99,8 @@ function relatedForView(type, side) {
     case 'Preferred':
       return [
         [find(s => s[0] === aux && s[1] === dom), 'Shares both axes with flipped dominance'],
+        [find(s => s[0] === oppositeFn(dom) && s[1] === oppositeFn(aux)),
+          'Shares both axes with flipped polarity'],
       ];
     case "Dominant's Complement":
       return [
