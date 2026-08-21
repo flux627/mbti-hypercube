@@ -40,6 +40,13 @@ body {
   -webkit-user-select: none;
 }
 
+.top-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
 /* Selected type and the currently viewed side, centered along the top. */
 .header {
   position: absolute;
@@ -129,4 +136,49 @@ body {
 .fcode {
   color: #808080;
   font-size: 12px;
+}
+
+/* Narrow screens: title and selector share the top row, the type header
+   drops below them, and the key moves to the bottom where portrait
+   viewports have room. */
+@media (max-width: 700px) {
+  .overlay {
+    inset: 0;
+    padding: 14px 16px;
+    justify-content: space-between;
+    align-items: stretch;
+  }
+
+  .top-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .overlay h1 {
+    font-size: 16px;
+  }
+
+  #typeSel {
+    font-size: 13px;
+    padding: 4px 6px;
+  }
+
+  .header {
+    padding-top: 58px;
+  }
+
+  .type-name {
+    font-size: 21px;
+  }
+
+  .face-name {
+    font-size: 12px;
+  }
+
+  .legend {
+    font-size: 12px;
+    gap: 4px;
+  }
 }

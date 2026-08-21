@@ -1151,6 +1151,24 @@ function CubeScene({
   );
 }
 
+// Keep the cube's horizontal framing on portrait viewports: the vertical
+// fov widens so the horizontal fov never drops below the landscape value,
+// instead of cropping the cube's sides.
+const BASE_FOV = 50;
+function ResponsiveFraming() {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const aspect = size.width / size.height;
+    camera.fov = aspect >= 1
+      ? BASE_FOV
+      : THREE.MathUtils.radToDeg(
+        2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect),
+      );
+    camera.updateProjectionMatrix();
+  }, [camera, size]);
+  return null;
+}
+
 export default function CognitiveCube({
   selectedType, setSelectedType, initialYaw = null, spin = true, cameraPosition = [5, 5, 5],
   exponent = 7, lineOpacity = 0.1, shadowDim = 0.73, shadowSat = 0.9, blendSides = false,
@@ -1158,7 +1176,8 @@ export default function CognitiveCube({
 }) {
   return (
     <div style={{ width: '100%', height: '100%' }}>
-      <Canvas camera={{ position: cameraPosition, fov: 50 }} style={{ background: '#0a0a0a' }}>
+      <Canvas camera={{ position: cameraPosition, fov: BASE_FOV }} style={{ background: '#0a0a0a' }}>
+        <ResponsiveFraming />
         <CubeScene
           selectedType={selectedType}
           setSelectedType={setSelectedType}

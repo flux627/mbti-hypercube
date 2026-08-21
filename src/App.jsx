@@ -119,8 +119,10 @@ function App() {
         <div className="face-name">{viewedSide}</div>
       </div>
       <div className="overlay">
-        <h1>Cognitive Cube</h1>
-        <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />
+        <div className="top-row">
+          <h1>Cognitive Cube</h1>
+          <TypeSelector selectedType={selectedType} onTypeChange={setSelectedType} />
+        </div>
         <div className="legend">
           {keyRows.map(({ rank, fn, color }) => (
             <div key={rank} className="legend-row">
